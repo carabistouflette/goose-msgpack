@@ -1,0 +1,13 @@
+goose-msgpack
+Copyright 2026 the goose-msgpack authors
+
+This product is licensed under the Apache License, Version 2.0. See LICENSE.
+
+This product implements the MessagePack specification
+(https://github.com/msgpack/msgpack/blob/master/spec.md), which is
+documentation, not source: no specification text or reference implementation
+source is copied into this repository.
+
+No third-party runtime source or native backend is vendored. The separately
+fetched pinned Goose compiler and standard library retain their source
+licenses. See THIRD_PARTY_NOTICES.md.

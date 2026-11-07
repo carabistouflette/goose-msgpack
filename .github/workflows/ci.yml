@@ -1,0 +1,28 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build python3 clang
+      - run: make setup
+      - run: make check test test-debug
+      - run: make sanitize SANITIZER_CC=gcc OUTPUT=.build/gcc-sanitize.json
+      - run: make sanitize SANITIZER_CC=clang OUTPUT=.build/clang-sanitize.json
+      # Compiles both benchmark binaries and proves they encode identical bytes.
+      # No timing runs here: measurements are serialised by the benchmark operator so no other process competes for the CPU.
+      - run: make bench-build CC=clang
+      - run: .build/bench/msgpack-bench verify
+      - run: .build/bench/msgpack-bench-competitor verify
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: msgpack-validation
+          path: .build/*.json
+          include-hidden-files: true
+          if-no-files-found: error
