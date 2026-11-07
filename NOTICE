@@ -8,6 +8,8 @@ This product implements the MessagePack specification
 documentation, not source: no specification text or reference implementation
 source is copied into this repository.
 
-No third-party runtime source or native backend is vendored. The separately
+The example task consumer includes goose-task (Apache-2.0), copyright the
+goose-task authors; see vendor/goose-task/LICENSE and vendor/pins.json.
+The codec imports no vendored dependency or native backend. The separately
 fetched pinned Goose compiler and standard library retain their source
 licenses. See THIRD_PARTY_NOTICES.md.

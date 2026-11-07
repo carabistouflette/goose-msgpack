@@ -32,7 +32,10 @@ def sha256(path: Path) -> str:
 def inputs(goose: Path, compiler: Path) -> dict:
     files = [ROOT / "msgpack.goose", ROOT / "tests" / "api.goose",
              ROOT / "tests" / "oracle.goose", ROOT / "tests" / "oracle.py",
-             ROOT / "examples" / "plan.goose", ROOT / "GOOSE_REVISION"]
+             ROOT / "examples" / "plan.goose", ROOT / "examples" / "plan_manifest.goose",
+             ROOT / "tests" / "plan_consumer.goose", ROOT / "tests" / "plan_model.goose",
+             ROOT / "tests" / "plan_model.py", ROOT / "tests" / "plan_process.py",
+             ROOT / "vendor" / "goose-task" / "task.goose", ROOT / "GOOSE_REVISION"]
     return {
         "goose": {"path": str(goose), "sha256": sha256(goose)},
         "cc": {"path": str(compiler), "sha256": sha256(compiler)},
@@ -95,7 +98,8 @@ def main() -> int:
         return proc.stdout
 
     for name, source, debug in [("api", "api", False), ("api-debug", "api", True),
-                                ("oracle", "oracle", False)]:
+                                ("oracle", "oracle", False), ("plan-consumer", "plan_consumer", False),
+                                ("plan-consumer-debug", "plan_consumer", True)]:
         binary = invocation / name
         execute([goose, "build", f"tests/{source}.goose", "--standalone",
                  *(["--debug"] if debug else []), "--cc", wrapper, "-o", binary])
@@ -103,6 +107,9 @@ def main() -> int:
 
     execute([binaries["api"]["path"]])
     execute([binaries["api-debug"]["path"]])
+    execute([binaries["plan-consumer"]["path"]])
+    execute([binaries["plan-consumer-debug"]["path"]])
+    execute([sys.executable, "tests/plan_model.py", "--goose", goose, "--cc", wrapper, "--output", invocation / "plan-model.json"])
     oracle_record = invocation / "oracle.json"
     execute([sys.executable, "tests/oracle.py", "--binary", binaries["oracle"]["path"],
              "--cases", str(args.cases), "--output", oracle_record])

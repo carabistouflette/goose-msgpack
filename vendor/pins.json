@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/carabistouflette/goose-task",
+  "revision": "166b684ca96403fea94072cc8e0c630321fb832d",
+  "tag": "v0.1.0-alpha.1",
+  "scope": "Example and consumer tests only; not imported by msgpack.goose",
+  "files": {
+    "task.goose": "5711c0966685f87ad04df51d2e9de08cf636b2a1ac6aa05c78f19e1f24db6c46",
+    "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  }
+}

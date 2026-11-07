@@ -1,6 +1,9 @@
 # Third-party notices
 
-No third-party runtime source or native backend is vendored. The separately
+The codec module imports no vendored dependency. Examples and consumer tests
+import the pinned pure-Goose goose-task source under `vendor/goose-task/`,
+Apache-2.0, with its LICENSE retained. Exact revision and file hashes are in
+`vendor/pins.json`. No native backend is vendored. The separately
 fetched pinned Goose compiler and standard library retain their source
 licenses.
 

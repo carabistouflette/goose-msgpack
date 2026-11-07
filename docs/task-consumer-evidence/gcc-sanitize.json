@@ -1,0 +1,368 @@
+{
+  "recorded_at_utc": "2026-11-07T22:17:31.996731+00:00",
+  "inputs": {
+    "goose": {
+      "path": "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose",
+      "sha256": "1a64a3f8885af87f083318458ee7bf14b07b5b921310edb8b9a8687c0935261c"
+    },
+    "cc": {
+      "path": "/usr/bin/gcc",
+      "sha256": "8aac907d6fbf40394b424b5fa4a2ad1aa291dac7d3a0315c5b415c1f5ace1287"
+    },
+    "source": {
+      "msgpack.goose": "2fac078e331276d8eee63f891bb152dada83943bec2e728e1215c7bf3ca5604b",
+      "tests/api.goose": "2e2772cfa2e53e639b5801699b96413fe8dc8557559619d6fe493ff25cc25612",
+      "tests/oracle.goose": "7b2afce1044599bef23e66ef53f91ae1731c639c44ad1cbee0bcc06594e023d4",
+      "tests/oracle.py": "3b5bcee6006bec6a165f81367fcf14c175637cffa63258fd65a66cdd7d7ff8f0",
+      "examples/plan.goose": "6f9eaa44d36b4e65a47368c62fa0c27375ac596980d5133b4a6f22c926f96ff4",
+      "examples/plan_manifest.goose": "63290ac1970d7e81de8a652d224b841dba0e8b728fe56101200e6290c17886ff",
+      "tests/plan_consumer.goose": "c9fc8a935afe3518a3028c36e644512f87064c6124044266198e11cac6ecd1be",
+      "tests/plan_model.goose": "d728c152bab4b05654820d8d413883b23817a3f8eac17b43110f37054273477c",
+      "tests/plan_model.py": "61f3aaadc778e4a8577a21b3cbd0959fcdccabb8672a7c01251ccf8e034a30be",
+      "tests/plan_process.py": "84010d020c171a9c3b95b3fd8d42d853dece54342577ab1fad4fab3e712377db",
+      "vendor/goose-task/task.goose": "5711c0966685f87ad04df51d2e9de08cf636b2a1ac6aa05c78f19e1f24db6c46",
+      "GOOSE_REVISION": "64e14b181dfe96743211738fb0f1b1f7798ea940da2ca50ff122e6f028c24e15"
+    }
+  },
+  "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+  "compiler_commands": [
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "-O2",
+      "/home/arobin/.goose/build/prog/api-79c0379c/api.c",
+      "-o",
+      "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api",
+      "-lm",
+      "-pthread",
+      "-ldl",
+      "-O1",
+      "-g",
+      "-fno-omit-frame-pointer",
+      "-fsanitize=address,undefined",
+      "-UNDEBUG",
+      "-no-pie"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "-O0",
+      "-g",
+      "/home/arobin/.goose/build/prog/api-79c0379c/api.c",
+      "-o",
+      "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api-debug",
+      "-lm",
+      "-pthread",
+      "-ldl",
+      "-O1",
+      "-g",
+      "-fno-omit-frame-pointer",
+      "-fsanitize=address,undefined",
+      "-UNDEBUG",
+      "-no-pie"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "-O2",
+      "/home/arobin/.goose/build/prog/oracle-70bff480/oracle.c",
+      "-o",
+      "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/oracle",
+      "-lm",
+      "-pthread",
+      "-ldl",
+      "-O1",
+      "-g",
+      "-fno-omit-frame-pointer",
+      "-fsanitize=address,undefined",
+      "-UNDEBUG",
+      "-no-pie"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "-O2",
+      "/home/arobin/.goose/build/prog/plan_consumer-78c6a419/plan_consumer.c",
+      "-o",
+      "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer",
+      "-lm",
+      "-pthread",
+      "-ldl",
+      "-O1",
+      "-g",
+      "-fno-omit-frame-pointer",
+      "-fsanitize=address,undefined",
+      "-UNDEBUG",
+      "-no-pie"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "-O0",
+      "-g",
+      "/home/arobin/.goose/build/prog/plan_consumer-78c6a419/plan_consumer.c",
+      "-o",
+      "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer-debug",
+      "-lm",
+      "-pthread",
+      "-ldl",
+      "-O1",
+      "-g",
+      "-fno-omit-frame-pointer",
+      "-fsanitize=address,undefined",
+      "-UNDEBUG",
+      "-no-pie"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "--version"
+    ],
+    [
+      "/usr/bin/gcc",
+      "-O2",
+      "/home/arobin/.goose/build/prog/release-503ddd47/release.c",
+      "-o",
+      "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/plan-model-_dpmb59_/release",
+      "-lm",
+      "-pthread",
+      "-ldl",
+      "-O1",
+      "-g",
+      "-fno-omit-frame-pointer",
+      "-fsanitize=address,undefined",
+      "-UNDEBUG",
+      "-no-pie"
+    ]
+  ],
+  "compiler_commands_sha256": "8a21ddfe47a7d0ef75ac744cb0b67d97d6d30dcc82c6233467ac703be1b6ca05",
+  "binaries": {
+    "api": {
+      "path": "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api",
+      "sha256": "a52b411437376280860508e32341c68c67a9b227ca20f7cde26fe3c998994fc2"
+    },
+    "api-debug": {
+      "path": "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api-debug",
+      "sha256": "c453dc44c64b4a49588e34b294a6db464330e2958f4ae58427c386e6ebc58ae4"
+    },
+    "oracle": {
+      "path": "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/oracle",
+      "sha256": "74aa88ef2a5090cd9203f807fc1162b4608243767ad034fa4fdaa36cd4b505a2"
+    },
+    "plan-consumer": {
+      "path": "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer",
+      "sha256": "7803cb0112c7d561069620739cdcac654c6ddfc08ea5f2043498fc1240e01219"
+    },
+    "plan-consumer-debug": {
+      "path": "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer-debug",
+      "sha256": "6e266f5ca5ab734200d9725aae3ba90ddbe330d6884da2bdede0e50b9353d2a5"
+    }
+  },
+  "executions": [
+    {
+      "command": [
+        "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose",
+        "build",
+        "tests/api.goose",
+        "--standalone",
+        "--cc",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/cc",
+        "-o",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api"
+      ],
+      "returncode": 0,
+      "stdout": "built /home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose",
+        "build",
+        "tests/api.goose",
+        "--standalone",
+        "--debug",
+        "--cc",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/cc",
+        "-o",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api-debug"
+      ],
+      "returncode": 0,
+      "stdout": "built /home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api-debug\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose",
+        "build",
+        "tests/oracle.goose",
+        "--standalone",
+        "--cc",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/cc",
+        "-o",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/oracle"
+      ],
+      "returncode": 0,
+      "stdout": "built /home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/oracle\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose",
+        "build",
+        "tests/plan_consumer.goose",
+        "--standalone",
+        "--cc",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/cc",
+        "-o",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer"
+      ],
+      "returncode": 0,
+      "stdout": "built /home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose",
+        "build",
+        "tests/plan_consumer.goose",
+        "--standalone",
+        "--debug",
+        "--cc",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/cc",
+        "-o",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer-debug"
+      ],
+      "returncode": 0,
+      "stdout": "built /home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer-debug\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api"
+      ],
+      "returncode": 0,
+      "stdout": "msgpack api ok: 420 checks\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/api-debug"
+      ],
+      "returncode": 0,
+      "stdout": "msgpack api ok: 420 checks\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer"
+      ],
+      "returncode": 0,
+      "stdout": "wire-plan consumer contracts passed\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-consumer-debug"
+      ],
+      "returncode": 0,
+      "stdout": "wire-plan consumer contracts passed\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/usr/bin/python3",
+        "tests/plan_model.py",
+        "--goose",
+        "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose",
+        "--cc",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/cc",
+        "--output",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/plan-model.json"
+      ],
+      "returncode": 0,
+      "stdout": "wire scheduling model passed: 512 cases\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/usr/bin/python3",
+        "tests/oracle.py",
+        "--binary",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/oracle",
+        "--cases",
+        "100000",
+        "--output",
+        "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/oracle.json"
+      ],
+      "returncode": 0,
+      "stdout": "msgpack oracle: 102723 differential cases passed; corpus 453ae1128e2e069b\n",
+      "stderr": ""
+    }
+  ],
+  "oracle": {
+    "seed": 20261107,
+    "cases": 102723,
+    "utf8_self_check_cases": 4023,
+    "corpus_sha256": "453ae1128e2e069b0e948cf9164b00b8e8c0893fadfaf319b95b436cbc72f48c",
+    "expected_sha256": "72a67abc4f03d040899e5dda8d41cd1f5a695eca9b1c518ca85220b4790c7f27",
+    "stdout_sha256": "72a67abc4f03d040899e5dda8d41cd1f5a695eca9b1c518ca85220b4790c7f27",
+    "python": "3.14.9 (main, Oct 25 2026, 14:52:47) [GCC 16.2.1 20260810]",
+    "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+    "command": [
+      "/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer/.build/sanitize/gcc-zpu_dfz1/oracle"
+    ],
+    "executable_sha256": "74aa88ef2a5090cd9203f807fc1162b4608243767ad034fa4fdaa36cd4b505a2",
+    "source_sha256": {
+      "msgpack.goose": "2fac078e331276d8eee63f891bb152dada83943bec2e728e1215c7bf3ca5604b",
+      "tests/oracle.goose": "7b2afce1044599bef23e66ef53f91ae1731c639c44ad1cbee0bcc06594e023d4",
+      "tests/oracle.py": "3b5bcee6006bec6a165f81367fcf14c175637cffa63258fd65a66cdd7d7ff8f0"
+    },
+    "notes": [
+      "Independent second implementation of the documented contract, written from the MessagePack specification and docs/api.md",
+      "Finite seeded differential corpus, not coverage-guided fuzzing or certification",
+      "The UTF-8 validator is cross-checked against CPython's strict codec"
+    ]
+  },
+  "notes": [
+    "Instrumented the generated Goose/runtime C; installed system libraries are not rebuilt",
+    "The differential corpus is a finite seeded campaign, not coverage-guided fuzzing"
+  ]
+}
