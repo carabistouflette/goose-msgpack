@@ -109,17 +109,34 @@ fn encode_plan(i: i64, out: u8[>..]&) -> bool {
     return true;
 }
 
-fn take_str(src: u8[:], at: i64&, n: u64&) -> bool {
+// FNV-1a over the bytes a primitive consumed. A token count is not a checksum:
+// it cannot tell a correct walk from one that read the wrong spans, and the
+// compiler may delete work whose only effect is a counter it can prove.
+fn fold(h: u64, src: u8[:], from: i64, to: i64) -> u64 {
+    var x = h;
+    var i = from;
+    while i < to {
+        x = (x ^ src[i]) * 1099511628211;
+        i += 1;
+    }
+    return x;
+}
+
+const FNV_OFFSET: u64 = 14695981039346656037;
+
+fn take_str(src: u8[:], at: i64&, h: u64&) -> bool {
+    let before = at;
     let s, ok = decode::str(src, at);
     if !ok { return false; }
-    n += s.len as u64;
+    h = fold(h, src, before, at);
     return true;
 }
 
-fn take_uint(src: u8[:], at: i64&, n: u64&) -> bool {
+fn take_uint(src: u8[:], at: i64&, h: u64&) -> bool {
+    let before = at;
     let v, ok = decode::uint(src, at);
     if !ok { return false; }
-    n += v;
+    h = fold(h, src, before, at);
     return true;
 }
 
@@ -128,45 +145,49 @@ fn take_uint(src: u8[:], at: i64&, n: u64&) -> bool {
 // primitive; the token reader dispatches once per value instead.
 fn dec_plan(src: u8[:]) -> u64 {
     var at: i64 = 0;
-    var n:  u64 = 0;
+    var h:  u64 = FNV_OFFSET;
+    let before_map = at;
     let members, ok = decode::map(src, at);
     if !ok { return 0; }
-    n += 1;
-    if !take_str(src, at, n) { return n; }
-    if !take_str(src, at, n) { return n; }
-    if !take_str(src, at, n) { return n; }
-    if !take_uint(src, at, n) { return n; }
-    if !take_str(src, at, n) { return n; }
-    if !take_uint(src, at, n) { return n; }
-    if !take_str(src, at, n) { return n; }
-    if !take_uint(src, at, n) { return n; }
-    if !take_str(src, at, n) { return n; }
+    h = fold(h, src, before_map, at);
+    if !take_str(src, at, h) { return h; }
+    if !take_str(src, at, h) { return h; }
+    if !take_str(src, at, h) { return h; }
+    if !take_uint(src, at, h) { return h; }
+    if !take_str(src, at, h) { return h; }
+    if !take_uint(src, at, h) { return h; }
+    if !take_str(src, at, h) { return h; }
+    if !take_uint(src, at, h) { return h; }
+    if !take_str(src, at, h) { return h; }
+    let before_edges = at;
     let edges, ok_edges = decode::array(src, at);
-    if !ok_edges { return n; }
-    n += 1;
+    if !ok_edges { return h; }
+    h = fold(h, src, before_edges, at);
     var k: i64 = 0;
     while k < edges {
+        let before_pair = at;
         let pair, ok_pair = decode::array(src, at);
-        if !ok_pair { return n; }
-        n += 1;
+        if !ok_pair { return h; }
+        h = fold(h, src, before_pair, at);
         var e: i64 = 0;
         while e < pair {
-            if !take_uint(src, at, n) { return n; }
+            if !take_uint(src, at, h) { return h; }
             e += 1;
         }
         k += 1;
     }
-    if !take_str(src, at, n) { return n; }
+    if !take_str(src, at, h) { return h; }
+    let before_labels = at;
     let labels, ok_labels = decode::map(src, at);
-    if !ok_labels { return n; }
-    n += 1;
+    if !ok_labels { return h; }
+    h = fold(h, src, before_labels, at);
     var m: i64 = 0;
     while m < labels {
-        if !take_str(src, at, n) { return n; }
-        if !take_str(src, at, n) { return n; }
+        if !take_str(src, at, h) { return h; }
+        if !take_str(src, at, h) { return h; }
         m += 1;
     }
-    return n;
+    return (h ^ (at as u64)) * 1099511628211;
 }
 
 fn hex(out: u8[>..]&, data: const u8[:]) {
@@ -244,10 +265,18 @@ fn row<F>(name: const u8[:], op: const u8[:], batch: i64, ms: i64) -> u64 {
     return part;
 }
 
+// Reused output buffer: one allocation, appended to every iteration.
 fn enc() -> u64 {
     g_out.clear();
     if !encode_plan(g_fixture, g_out) { return 0; }
-    return g_out.len as u64;
+    return fold(FNV_OFFSET, g_out[..], 0, g_out.len);
+}
+
+// Fresh output buffer: one allocation per document.
+fn enc_fresh() -> u64 {
+    var out: u8[>..] = [];
+    if !encode_plan(g_fixture, out) { return 0; }
+    return fold(FNV_OFFSET, out[..], 0, out.len);
 }
 
 fn dec() -> u64 {
@@ -259,11 +288,65 @@ fn dec_truncated() -> u64 {
     return dec_plan(g_data[..g_data.len - 1]);
 }
 
+// One `sum <fixture> <op> <value>` row per measured row, computed once, so the
+// runner can prove this binary's own checksums are stable across samples.
+fn checksums() -> i64 {
+    var i: i64 = 0;
+    while i < fixture_count() {
+        g_fixture = i;
+        g_out.clear();
+        if !encode_plan(i, g_out) {
+            write_stderr("FAIL encode ");
+            write_stderr(fixture_name(i));
+            write_stderr("\n");
+            return 1;
+        }
+        g_data.clear();
+        g_data.append(g_out[..]);
+        sum_row(fixture_name(i), "encode-reused", enc());
+        sum_row(fixture_name(i), "encode-fresh", enc_fresh());
+        sum_row(fixture_name(i), "decode-fresh", dec());
+        na(fixture_name(i), "decode-reused");
+        sum_row(fixture_name(i), "decode-truncated", dec_truncated());
+        i += 1;
+    }
+    return 0;
+}
+
+fn sum_row(name: const u8[:], op: const u8[:], value: u64) {
+    var out: u8[>..] = [];
+    out.append("sum ");
+    out.append(name);
+    out.push(' ');
+    out.append(op);
+    out.push(' ');
+    format_int(out, value as i64, 10, 0, ' ');
+    out.push('\n');
+    write_stdout(out[..]);
+}
+
+// An explicitly not-applicable cell. The runner prints it as `n/a` instead of
+// inventing a number, so the table never implies a comparison that was not run.
+fn na(name: const u8[:], op: const u8[:]) {
+    var out: u8[>..] = [];
+    out.append("na ");
+    out.append(name);
+    out.push(' ');
+    out.append(op);
+    out.push('\n');
+    write_stdout(out[..]);
+}
+
 fn ::main() {
     var args: u8[>..] = [];
     if arg_count() > 1 { arg(1, args); }
     if args[..] == "verify" {
         let bad = verify();
+        if bad != 0 { exit(1); }
+        return;
+    }
+    if args[..] == "checksum" {
+        let bad = checksums();
         if bad != 0 { exit(1); }
         return;
     }
@@ -300,8 +383,13 @@ fn ::main() {
         }
         g_data.clear();
         g_data.append(g_out[..]);
-        sink += row(fixture_name(i), "encode", batch, ms, enc);
-        sink += row(fixture_name(i), "decode", batch, ms, dec);
+        sink += row(fixture_name(i), "encode-reused", batch, ms, enc);
+        sink += row(fixture_name(i), "encode-fresh", batch, ms, enc_fresh);
+        sink += row(fixture_name(i), "decode-fresh", batch, ms, dec);
+        // The competitor's decoder is stateless: `at` is a caller-owned cursor
+        // and there is no reader object to reuse, so this cell is not
+        // applicable rather than equal to decode-fresh.
+        na(fixture_name(i), "decode-reused");
         sink += row(fixture_name(i), "decode-truncated", batch, ms, dec_truncated);
         i += 1;
     }

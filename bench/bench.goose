@@ -134,23 +134,61 @@ fn encode_plan(i: i64, out: u8[>..]&) -> msgpack::Error {
     return msgpack::Error.None;
 }
 
-// Drain the token stream. The payload lengths are folded into the sink so the
-// reads cannot be optimised away.
-fn drain(data: const u8[:]) -> u64 {
-    var r = msgpack::Reader { .. };
+// FNV-1a. A length is not a checksum: two different encodings of the same size
+// are indistinguishable to it, and a compiler may delete work whose only
+// observable effect is a length it can prove. Folding the bytes makes the
+// result depend on every byte the harness produced or consumed.
+fn fnv1a(seed: u64, data: const u8[:]) -> u64 {
+    var h = seed;
+    for i in 0..data.len {
+        h = (h ^ data[i]) * 1099511628211;
+    }
+    return h;
+}
+
+const FNV_OFFSET: u64 = 14695981039346656037;
+
+// The token discriminant, so the sink binds the reader's *interpretation* of a
+// marker and not only the bytes it happened to consume.
+fn kind_of(token: msgpack::Token) -> u64 {
+    match token {
+        Nil => { return 0; },
+        Bool b => { if b.v { return 2; } return 1; },
+        Int i => { return 3; },
+        Uint u => { return 4; },
+        F32 f => { return 5; },
+        F64 f => { return 6; },
+        Str s => { return 7; },
+        Bin b => { return 8; },
+        Array a => { return 9; },
+        Map m => { return 10; },
+        Ext e => { return 11; },
+        _ => { return 12; },
+    }
+}
+
+// Drain the token stream into a caller-owned reader. The sink folds the token
+// kind and the exact byte span each token consumed, so a reader that splits the
+// input differently, or reinterprets a marker, changes the checksum.
+fn drain_into(r: msgpack::Reader&, data: const u8[:]) -> u64 {
     if msgpack::init(r, data) != msgpack::Error.None { return 0; }
-    var n: u64 = 0;
+    var h:    u64 = FNV_OFFSET;
+    var prev: i64 = 0;
     while !msgpack::done(r) {
         let token, err = msgpack::next(r);
-        if err != msgpack::Error.None { return n + 1; }
-        n += 1;
-        match token {
-            Str s => { n += s.v.len as u64; },
-            Bin b => { n += b.v.len as u64; },
-            _ => {},
-        }
+        if err != msgpack::Error.None { return h ^ 0xffffffffffffffff; }
+        let at = msgpack::consumed(r);
+        h = (h ^ kind_of(token)) * 1099511628211;
+        h = fnv1a(h, data[prev..at]);
+        prev = at;
     }
-    return n;
+    h = (h ^ (msgpack::consumed(r) as u64)) * 1099511628211;
+    return h;
+}
+
+fn drain(data: const u8[:]) -> u64 {
+    var r = msgpack::Reader { .. };
+    return drain_into(r, data);
 }
 
 fn hex(out: u8[>..]&, data: const u8[:]) {
@@ -222,6 +260,11 @@ fn time_batch<F>(batch: i64, ms: i64) -> i64, u64 {
 
 fn row<F>(name: const u8[:], op: const u8[:], batch: i64, ms: i64) -> u64 {
     let ns, part = time_batch(batch, ms, F);
+    emit(name, op, batch, ns);
+    return part;
+}
+
+fn emit(name: const u8[:], op: const u8[:], batch: i64, ns: i64) {
     var out: u8[>..] = [];
     out.append("time ");
     out.append(name);
@@ -233,18 +276,65 @@ fn row<F>(name: const u8[:], op: const u8[:], batch: i64, ms: i64) -> u64 {
     format_int(out, ns, 10, 0, ' ');
     out.push('\n');
     write_stdout(out[..]);
-    return part;
 }
 
+// The reader-reusing row. Same measurement loop as `time_batch`, but the reader
+// is owned by the caller so its depth stack survives across iterations.
+fn row_reused(r: msgpack::Reader&, name: const u8[:], op: const u8[:], batch: i64, ms: i64) -> u64 {
+    var sink: u64 = 0;
+    var k:    i64 = 0;
+    while k < batch {
+        sink += dec_reused(r);
+        k += 1;
+    }
+    var n:  i64 = 0;
+    var dt: i64 = 0;
+    let end = clock_ns() + ms * 1000000;
+    while true {
+        let t0 = clock_ns();
+        k = 0;
+        while k < batch {
+            sink += dec_reused(r);
+            k += 1;
+        }
+        dt += clock_ns() - t0;
+        n += batch;
+        if clock_ns() >= end { break; }
+    }
+    emit(name, op, batch, dt / n);
+    return sink;
+}
+
+// Reused output buffer: the writer appends into the same allocation every
+// iteration, which is what a caller streaming many documents does.
 fn enc() -> u64 {
     g_out.clear();
     let e = encode_plan(g_fixture, g_out);
     if e != msgpack::Error.None { return 0; }
-    return g_out.len as u64;
+    return fnv1a(FNV_OFFSET, g_out[..]);
 }
 
+// Fresh output buffer: one allocation per document, which is what a caller
+// producing one message per request does. The two rows separate allocator cost
+// from encoder cost.
+fn enc_fresh() -> u64 {
+    var out: u8[>..] = [];
+    let e = encode_plan(g_fixture, out);
+    if e != msgpack::Error.None { return 0; }
+    return fnv1a(FNV_OFFSET, out[..]);
+}
+
+// Fresh reader: the 2 KiB depth stack is a new value each call.
 fn dec() -> u64 {
     return drain(g_data[..]);
+}
+
+// Reused reader: the same depth stack is re-initialised each call. The reader
+// is a local of the caller, not a global, because a global reader would hold a
+// reference into `g_data` across the `clear()` that rebuilds it for the next
+// fixture -- which the borrow checker rejects, correctly.
+fn dec_reused(r: msgpack::Reader&) -> u64 {
+    return drain_into(r, g_data[..]);
 }
 
 fn dec_truncated() -> u64 {
@@ -252,11 +342,57 @@ fn dec_truncated() -> u64 {
     return drain(g_data[..g_data.len - 1]);
 }
 
+// One `sum <fixture> <op> <value>` row per measured row, computed once. The
+// runner compares these between the baseline and the optimised binary: a
+// speed-up that changes a checksum is a wrong answer, not a faster one.
+fn checksums() -> i64 {
+    var bad: i64 = 0;
+    var i:   i64 = 0;
+    while i < fixture_count() {
+        g_fixture = i;
+        g_out.clear();
+        let e = encode_plan(i, g_out);
+        if e != msgpack::Error.None {
+            write_stderr("FAIL encode ");
+            write_stderr(fixture_name(i));
+            write_stderr("\n");
+            return 1;
+        }
+        g_data.clear();
+        g_data.append(g_out[..]);
+        var r = msgpack::Reader { .. };
+        sum_row(fixture_name(i), "encode-reused", enc());
+        sum_row(fixture_name(i), "encode-fresh", enc_fresh());
+        sum_row(fixture_name(i), "decode-fresh", dec());
+        sum_row(fixture_name(i), "decode-reused", dec_reused(r));
+        sum_row(fixture_name(i), "decode-truncated", dec_truncated());
+        i += 1;
+    }
+    return bad;
+}
+
+fn sum_row(name: const u8[:], op: const u8[:], value: u64) {
+    var out: u8[>..] = [];
+    out.append("sum ");
+    out.append(name);
+    out.push(' ');
+    out.append(op);
+    out.push(' ');
+    format_int(out, value as i64, 10, 0, ' ');
+    out.push('\n');
+    write_stdout(out[..]);
+}
+
 fn ::main() {
     var args: u8[>..] = [];
     if arg_count() > 1 { arg(1, args); }
     if args[..] == "verify" {
         let bad = verify();
+        if bad != 0 { exit(1); }
+        return;
+    }
+    if args[..] == "checksum" {
+        let bad = checksums();
         if bad != 0 { exit(1); }
         return;
     }
@@ -294,8 +430,13 @@ fn ::main() {
         }
         g_data.clear();
         g_data.append(g_out[..]);
-        sink += row(fixture_name(i), "encode", batch, ms, enc);
-        sink += row(fixture_name(i), "decode", batch, ms, dec);
+        // Declared after `g_data` is final for this fixture and dropped before
+        // the next `clear()`, so the reader never outlives its input.
+        var r = msgpack::Reader { .. };
+        sink += row(fixture_name(i), "encode-reused", batch, ms, enc);
+        sink += row(fixture_name(i), "encode-fresh", batch, ms, enc_fresh);
+        sink += row(fixture_name(i), "decode-fresh", batch, ms, dec);
+        sink += row_reused(r, fixture_name(i), "decode-reused", batch, ms);
         sink += row(fixture_name(i), "decode-truncated", batch, ms, dec_truncated);
         i += 1;
     }
