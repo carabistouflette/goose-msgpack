@@ -16,7 +16,7 @@ A single MessagePack map requires five unique string-named fields:
 | version | Nonnegative integer 1 |
 | count | Nonnegative integer, 0–64 |
 | concurrency | Integer, 1–64; may exceed count, including an empty plan |
-| edges | Array of at most256 two-element arrays of nonnegative integer IDs |
+| edges | Array of at most 256 two-element arrays of nonnegative integer IDs |
 
 Both signed and unsigned integer marker families are accepted for nonnegative
 values that fit i64; booleans/floats are not integers here. `edges` and pairs
@@ -24,15 +24,17 @@ must be arrays, never maps with coincidentally equal counts. Endpoints and
 cycles are validated by goose-task, not a duplicate graph implementation.
 Duplicate edges retain their multiplicity and wire order.
 
-The example policy permits at most16 map members, 64KiB input/output, 4,096
-codec nodes, depth8 and256 elements per container. These limits are deliberately
-smaller than the libraries' hard maxima and can represent the stated64/256
+The example policy permits at most 16 map members, 64 KiB input/output, 4,096
+codec nodes, depth 8 and 256 elements per container. These limits are deliberately
+smaller than the libraries' hard maxima and can represent the stated 64/256
 graph envelope. Declared lengths are checked before growing edge storage.
 Unknown string-named fields are skipped as entire budgeted values for forward
 compatibility. Unknown names may repeat; recognized names may not. Missing,
 wrong-type, duplicate-known-field, trailing, truncated and over-budget inputs
 are rejected. Map order is not significant.
 
+`encode` enforces schema sizes and nonnegative IDs, but does not validate graph
+topology; a successful encoding is not proof that a plan is runnable.
 `decode` owns a fresh temporary plan and returns an empty default on failure;
 it validates the schema and full-input consumption, not graph topology.
 `start` first decodes and calls `finish(reader)`, then invokes
@@ -44,14 +46,16 @@ construct a fresh scheduler for each accepted manifest.
 
 ## Completion, ordering and cancellation
 
-Initial ready IDs enter FIFO in ascending order. Later releases follow the final
+Determinism requires a fixed graph and completion sequence; real workers may
+finish in different orders. Initial ready IDs enter FIFO in ascending order. Later releases follow the final
 incoming occurrence's input-edge order; this can differ from smallest-ID order.
-For `0→2, 0→3, 0→2`, completing0 releases3 before2. The model initially assumed
+For `0→2, 0→3, 0→2`, completing 0 releases 3 before 2. The model initially assumed
 first occurrence; the retained counterexample motivated an explicit regression
 and a specification-correct independent oracle. The library behavior was correct.
 
 A task failure transitively skips dependents, including overlapping descendant
-sets only once, while independent work can continue. The single owner reports
+sets only once, while independent work can continue. `Done` means terminal, not all succeeded;
+callers must inspect failed/skipped counters. The single owner reports
 actual completion outcomes serially. The consumer does not kill processes,
 implement retries, or create OS workers.
 
@@ -74,8 +78,8 @@ fields and bounded extensions. A DFS/set-prerequisite model computes expected
 traces, states and counters under fixed completion/failure/cancellation policies.
 It does not use the library's CSR/degree-counter algorithm. A generated fixed
 Goose program feeds those wire bytes through the real decoder and scheduler.
-The model uses last-occurrence ordering for duplicate releases. Default512
-cases use seed20261107; inputs, generated program, tool hashes, stdout and
+The model uses last-occurrence ordering for duplicate releases. Default 512
+cases use seed 20261107; inputs, generated program, tool hashes, stdout and
 mismatch/failure data are retained in a new `.build/plan-model-*` directory.
 Existing explicit output paths are never overwritten.
 

@@ -103,6 +103,9 @@ fn encode(plan: const Plan&) -> u8[], Status {
     if plan.count < 0 || plan.count > MAX_TASKS { return [], Status { error: Error.TaskLimit, .. }; }
     if plan.concurrency < 1 || plan.concurrency > MAX_TASKS { return [], Status { error: Error.Parallelism, .. }; }
     if plan.edges.len > MAX_EDGES { return [], Status { error: Error.EdgeLimit, .. }; }
+    for edge in plan.edges {
+        if edge.before < 0 || edge.after < 0 { return [], Status { error: Error.Type, .. }; }
+    }
     var writer = msgpack::Writer { .. };
     var error = msgpack::init(writer, budgets());
     if error != msgpack::Error.None { return [], codec(error); }

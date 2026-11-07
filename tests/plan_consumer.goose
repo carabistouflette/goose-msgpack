@@ -66,6 +66,11 @@ fn message(kind: i64, field: i64 = -1) -> u8[] {
     assert(msgpack::finish(w) == msgpack::Error.None); var out: u8[>..] = []; out.append(msgpack::output(w)); return copy(out);
 }
 fn graph_cases() {
+    for side in 2 {
+        var negative = plan_manifest::Plan { count: 2, edges: [task::Edge { if side == 0 { -1 } else { 0 }, if side == 1 { -1 } else { 0 } }] };
+        let wire, error = plan_manifest::encode(negative); assert(error.error == plan_manifest::Error.Type && wire.len == 0);
+    }
+
     for cycle in [false, true] {
         var p = plan_manifest::Plan { count: 3, concurrency: 2, edges: [task::Edge { 0, 1 }, task::Edge { 1, 2 }, task::Edge { 2, if cycle { 0 } else { 2 } }] };
         var s = task::Scheduler { .. }; let status = plan_manifest::start(s, good(p));
