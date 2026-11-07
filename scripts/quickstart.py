@@ -3,8 +3,8 @@
 """Run the README quickstart, so it cannot rot.
 
 The first ```goose block in README.md is the quickstart. It imports the
-published path, which does not exist in a checkout, so this script rewrites
-that one line to the local package and runs the result with the pinned
+published revision; this script rewrites that one line to the local package
+to test the current source, and runs the result with the pinned
 compiler. Any other edit to the block is executed verbatim.
 """
 from __future__ import annotations

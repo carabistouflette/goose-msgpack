@@ -178,7 +178,8 @@ arrays, skipping the final nested child, and strict UTF-8. The invalid fixstr
 `a1 ff` is rejected rather than exposed as text. Overlong, surrogate and
 truncated sequences are rejected; non-characters remain valid UTF-8.
 
-Publication review added explicit stream/framing regressions: the writer may
+Publication review expanded the API suite from 400 to 420 checks with
+explicit stream/framing regressions: the writer may
 emit zero or more values, its budget spans all of them, and the reader rejects
 empty or concatenated output when a caller requires exactly one document.
 

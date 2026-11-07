@@ -44,7 +44,7 @@ Install the Goose revision in [GOOSE_REVISION](GOOSE_REVISION), save this as
 application's root source file.
 
 ```goose
-import msgpack from "carabistouflette/goose-msgpack@<commit>";
+import msgpack from "carabistouflette/goose-msgpack@fcd52b882563049084dc133aa218b47ebacd4360";
 import std;
 fn main() {
     var writer = msgpack::Writer { .. };
