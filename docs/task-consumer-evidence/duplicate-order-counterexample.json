@@ -1,0 +1,10 @@
+{
+  "case": 408,
+  "wire": "85ab636f6e63757272656e637901a565646765739a920004920003920102920104920104920004920103920004920102920003a6666f726d6174af676f6f73652d7461736b2d706c616ea5636f756e7405a776657273696f6e01",
+  "fail": 2,
+  "cancel": 4,
+  "reverse": false,
+  "incorrect_first_occurrence_model": "C 0,1,2,4,|0,1,2,4,|SSFRS|0:3:1:0",
+  "library_and_corrected_model": "C 0,1,4,3,|0,1,4,3,|SSRSS|0:4:0:0",
+  "reason": "Duplicate occurrences release a target at its final outgoing occurrence; the library was correct. Development oracle correction, excluded from passing-run summaries."
+}

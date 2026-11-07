@@ -1,0 +1,27 @@
+{
+  "seed": 20261107,
+  "cases": 102723,
+  "utf8_self_check_cases": 4023,
+  "corpus_sha256": "453ae1128e2e069b0e948cf9164b00b8e8c0893fadfaf319b95b436cbc72f48c",
+  "expected_sha256": "72a67abc4f03d040899e5dda8d41cd1f5a695eca9b1c518ca85220b4790c7f27",
+  "stdout_sha256": "72a67abc4f03d040899e5dda8d41cd1f5a695eca9b1c518ca85220b4790c7f27",
+  "python": "3.14.9 (main, Oct 25 2026, 14:52:47) [GCC 16.2.1 20260810]",
+  "platform": "Linux-7.2.11-arch1-1-x86_64-with-glibc2.44",
+  "command": [
+    "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose",
+    "run",
+    "tests/oracle.goose",
+    "--debug"
+  ],
+  "executable_sha256": "1a64a3f8885af87f083318458ee7bf14b07b5b921310edb8b9a8687c0935261c",
+  "source_sha256": {
+    "msgpack.goose": "2fac078e331276d8eee63f891bb152dada83943bec2e728e1215c7bf3ca5604b",
+    "tests/oracle.goose": "7b2afce1044599bef23e66ef53f91ae1731c639c44ad1cbee0bcc06594e023d4",
+    "tests/oracle.py": "3b5bcee6006bec6a165f81367fcf14c175637cffa63258fd65a66cdd7d7ff8f0"
+  },
+  "notes": [
+    "Independent second implementation of the documented contract, written from the MessagePack specification and docs/api.md",
+    "Finite seeded differential corpus, not coverage-guided fuzzing or certification",
+    "The UTF-8 validator is cross-checked against CPython's strict codec"
+  ]
+}

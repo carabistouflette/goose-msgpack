@@ -1,0 +1,5 @@
+make: Entering directory '/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer'
+python3 scripts/sanitize.py --goose "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" --cc "clang" --cases 100000 --output ".build/task-clang-sanitize-final.json"
+msgpack sanitizer: contract tests and 102723 oracle cases passed under ASan/UBSan (clang)
+msgpack sanitizer results: .build/task-clang-sanitize-final.json
+make: Leaving directory '/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer'

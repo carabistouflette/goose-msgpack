@@ -1,0 +1,49 @@
+{
+  "source": "8537bc83f668899a198ca90cff7555784d2c54ed",
+  "codec_base": "18c968bcf2d938bd3af6e878e5ee607eaac3c875",
+  "codec_unchanged": true,
+  "codec_sha256": "2fac078e331276d8eee63f891bb152dada83943bec2e728e1215c7bf3ca5604b",
+  "task_pin": {
+    "repository": "https://github.com/carabistouflette/goose-task",
+    "revision": "166b684ca96403fea94072cc8e0c630321fb832d",
+    "tag": "v0.1.0-alpha.1",
+    "scope": "Example and consumer tests only; not imported by msgpack.goose",
+    "files": {
+      "task.goose": "5711c0966685f87ad04df51d2e9de08cf636b2a1ac6aa05c78f19e1f24db6c46",
+      "LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    }
+  },
+  "model_cases_per_configuration": 512,
+  "configurations": [
+    "release",
+    "debug",
+    "gcc-asan-ubsan",
+    "clang-asan-ubsan"
+  ],
+  "process_selftests": 4,
+  "scope": "Example wire-plan workflow, not a production runner. Fixed completion/failure/cancellation policies; no workers spawned by the consumer; no library API expansion or throughput claim.",
+  "sha256": {
+    "model-release.json": "b064d5b3e15f27a78d31c9826715868733a149dbc6fe55da61cbe0e67bbe8a91",
+    "model-debug.json": "f332a0b03a064ed5fce1f73dbbc9369fc4d030d9da476d7317babec093b929ea",
+    "gcc-sanitize.json": "3e7810ada83def0683c9bb851980258e6c6e563c3efac579122be83d66f8bf66",
+    "gcc-compiler-commands.jsonl": "8a21ddfe47a7d0ef75ac744cb0b67d97d6d30dcc82c6233467ac703be1b6ca05",
+    "model-gcc-sanitize.json": "de32998874e86964cc4a683b2c0b51519b6a9a959335675b7d537e8ef383f909",
+    "clang-sanitize.json": "8adf74771b4e5cad6b673025e8fcaa0b1dffff1ba533aa9219d13a9421b7094e",
+    "clang-compiler-commands.jsonl": "2c7240dab4133f9cc6ea74d9541adb9ec9b1be94e3687560e657658b343013e1",
+    "model-clang-sanitize.json": "d786ffa70a13b365ebdfd9aa112162a15168f02fceeb1811d9ee32762eae8e68",
+    "normal-debug.log": "0404626a59cf05fd1ffb472d9b4f0c52fe417fa754985ef176f00e49aaa00deb",
+    "sanitize-gcc.log": "ff1b0ed8b547c726e64112c680925717bbcb31461f3e827ea0d701f022ebff8e",
+    "sanitize-clang.log": "327b30a7f4094549e1fd011737c378cfe9c89a795021c2247bbd6966d9f70a48",
+    "process-selftests.log": "805c097d3bb2d8bbb0b556a56595aa700be94305e8e46980a36f5ad36e866446",
+    "oracle.json": "9f1529ca4738a16c43b604fa3d3637c9221e9a4e07918ca1a0db1e32eddbceaf",
+    "oracle-native.json": "2ad0e2ca4f396a513eebdfab97c138259eda7a92a107c85747675db53ff26e87",
+    "oracle-debug.json": "9d310792c682024de141584a4734a3599e67ca115ee3d563c81f4c77db7d7266",
+    "duplicate-order-counterexample.json": "06c96f28dc7bfa7d689a2c0615068577b093cc3a97839bceace18c3801850f31",
+    "codec-only.log": "551c5c1484f7461063e9b725528532a53aad69b980bc3f359ca3eb6f8337ce0e"
+  },
+  "codec_only_smoke": {
+    "source": "import msgpack from \".\";\nimport std;\nfn main() {\n    var writer = msgpack::Writer { .. };\n    assert(msgpack::init(writer) == msgpack::Error.None);\n    assert(msgpack::int(writer, 42) == msgpack::Error.None);\n    assert(msgpack::finish(writer) == msgpack::Error.None);\n    assert(msgpack::output(writer).len == 1 && msgpack::output(writer)[0] == 42);\n    print(\"codec-only import passed\");\n}\n",
+    "output": "codec-only import passed\n",
+    "scope": "Imported a standalone copy of msgpack.goose with no vendor directory."
+  }
+}
