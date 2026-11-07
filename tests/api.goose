@@ -627,6 +627,8 @@ fn main() {
     depth_empty_child_cases();
     output_budget_exact_cases();
     map_frame_cases();
+    depth_semantics_cases();
+    accessor_sentinel_cases();
     if failures > 0 {
         write_stderr(str(failures, " of ", checks, " checks failed\n"));
         exit(1);
@@ -1155,4 +1157,151 @@ fn map_frame_cases() {
     expect_error(msgpack::nil(writer), msgpack::Error.None, "nested map value");
     expect_error(msgpack::finish(writer), msgpack::Error.None, "nested map complete");
     expect_bytes(msgpack::output(writer), "\x91\x81\xa1k\xc0", "nested map bytes");
+}
+
+// ---- depth semantics: open frames, not structural nesting ---------------
+// `max_depth` bounds the number of simultaneously open *non-empty* frames. An
+// empty container is a leaf: it opens no frame, so it is accepted at any depth
+// and consumes no slot. The consequence is that the container nesting depth of
+// an accepted document is at most `max_depth + 1`, and that bound is attained
+// exactly when the deepest container is empty. This is a documented semantic,
+// not an optimisation: changing it changes which documents are accepted.
+fn chain(n: i64, leaf: u8) -> u8[>..] {
+    var out: u8[>..] = [];
+    var i:   i64     = 0;
+    while i < n { out.push(0x91); i += 1; }
+    out.push(leaf);
+    return out;
+}
+
+fn depth_semantics_cases() {
+    var reader = msgpack::Reader { .. };
+    var limits = msgpack::Limits { .. };
+
+    // max_depth = 2: two non-empty frames plus a trailing empty leaf is the
+    // deepest accepted shape; a third non-empty frame is rejected.
+    limits.max_depth = 2;
+    expect_error(msgpack::init(reader, "\x91\x91\x90", limits), msgpack::Error.None, "structural depth 3 init");
+    var token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "structural depth 3 outer");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "structural depth 3 middle");
+    expect(msgpack::depth(reader) == 2, "two non-empty frames are open");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "structural depth 3 empty leaf");
+    expect(msgpack::count(token) == 0, "the leaf is an empty array");
+    expect(msgpack::depth(reader) == 0, "an empty leaf unwinds every frame it completes");
+    expect_error(msgpack::finish(reader), msgpack::Error.None, "structural depth 3 finish");
+
+    expect_error(msgpack::init(reader, "\x91\x91\x91\x90", limits), msgpack::Error.None, "structural depth 4 init");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "structural depth 4 outer");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "structural depth 4 middle");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.DepthLimit, "a third non-empty frame exceeds max_depth 2");
+    expect(msgpack::offset(reader) == 2, "the depth failure is reported at the third header");
+
+    // A map pair of two empty containers is one frame and two leaves.
+    limits.max_depth = 1;
+    expect_error(msgpack::init(reader, "\x81\x90\x90", limits), msgpack::Error.None, "empty pair init");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "empty pair map");
+    expect(msgpack::depth(reader) == 1, "a map of one pair opens one frame");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "empty pair key");
+    expect(msgpack::depth(reader) == 1, "the key leaves the map frame open");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "empty pair value");
+    expect(msgpack::depth(reader) == 0, "the value closes the map frame");
+    expect_error(msgpack::finish(reader), msgpack::Error.None, "empty pair finish");
+
+    // The frame stack is a fixed i64[..MAX_DEPTH]. At max_depth = MAX_DEPTH a
+    // chain of MAX_DEPTH non-empty arrays must fit exactly, and one more must
+    // be rejected rather than overflow the stack.
+    limits.max_depth = msgpack::MAX_DEPTH;
+    let at = chain(msgpack::MAX_DEPTH, 0x01);
+    expect_error(msgpack::init(reader, at[..], limits), msgpack::Error.None, "max depth chain init");
+    var deepest: i64 = 0;
+    while !msgpack::done(reader) {
+        token, error = msgpack::next(reader);
+        if error != msgpack::Error.None { break; }
+        if msgpack::depth(reader) > deepest { deepest = msgpack::depth(reader); }
+    }
+    expect_error(error, msgpack::Error.None, "max depth chain accepted");
+    expect(deepest == msgpack::MAX_DEPTH, "the frame stack holds exactly MAX_DEPTH frames");
+    expect_error(msgpack::finish(reader), msgpack::Error.None, "max depth chain finish");
+
+    let over = chain(msgpack::MAX_DEPTH + 1, 0x01);
+    expect_error(msgpack::init(reader, over[..], limits), msgpack::Error.None, "max depth + 1 init");
+    var rejected = msgpack::Error.None;
+    while !msgpack::done(reader) {
+        token, error = msgpack::next(reader);
+        if error != msgpack::Error.None { rejected = error; break; }
+    }
+    expect_error(rejected, msgpack::Error.DepthLimit, "MAX_DEPTH + 1 frames is DepthLimit, not an overflow");
+
+    // The writer mirrors the reader: an empty container opens no frame, so it
+    // is accepted at the limit, while a second non-empty one is not.
+    var writer = msgpack::Writer { .. };
+    limits.max_depth = 1;
+    expect_error(msgpack::init(writer, limits), msgpack::Error.None, "writer empty at limit init");
+    expect_error(msgpack::array(writer, 1), msgpack::Error.None, "writer one frame");
+    expect_error(msgpack::array(writer, 1), msgpack::Error.DepthLimit, "writer second non-empty frame rejected");
+
+    // An empty child closes the frame it completes, so the writer is back at
+    // the top level and the next value is a second top-level value, not a
+    // deeper one. The writer allows a sequence; `finish` reports the open one.
+    expect_error(msgpack::init(writer, limits), msgpack::Error.None, "writer empty child init");
+    expect_error(msgpack::array(writer, 1), msgpack::Error.None, "writer empty child frame");
+    expect_error(msgpack::array(writer, 0), msgpack::Error.None, "writer empty child at the limit");
+    expect_error(msgpack::finish(writer), msgpack::Error.None, "an empty child completes the value");
+    expect_bytes(msgpack::output(writer), "\x91\x90", "empty child bytes");
+    expect_error(msgpack::array(writer, 1), msgpack::Error.None, "a second top-level value is allowed");
+    expect_error(msgpack::finish(writer), msgpack::Error.Unbalanced, "the second value is still open");
+}
+
+// ---- accessor sentinels -------------------------------------------------
+// The accessors return a sentinel for a token that does not match, and two of
+// those sentinels collide with real values. The collision is documented in
+// docs/api.md; these cases pin the exact return so the documentation cannot
+// drift from the code.
+fn accessor_sentinel_cases() {
+    var reader = msgpack::Reader { .. };
+
+    // ext_type returns 0 for a non-Ext token, and 0 is also a valid ext type.
+    expect_error(msgpack::init(reader, "\x01"), msgpack::Error.None, "sentinel int init");
+    var token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "sentinel int token");
+    expect(msgpack::ext_type(token) == 0, "ext_type of a non-Ext token is 0");
+    expect(msgpack::bytes(token).len == 0, "bytes of a non-Bin token is empty");
+    expect(msgpack::text(token).len == 0, "text of a non-Str token is empty");
+    expect(msgpack::count(token) == -1, "count of a non-container is -1");
+
+    // An Ext of type 0 returns the same 0, so the accessor alone cannot tell
+    // the two apart. `match` can, and that is the documented path.
+    expect_error(msgpack::init(reader, "\xd4\x00\x7f"), msgpack::Error.None, "sentinel ext0 init");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "sentinel ext0 token");
+    expect(msgpack::ext_type(token) == 0, "ext_type of an Ext of type 0 is 0");
+    expect(msgpack::bytes(token).len == 1, "an Ext of type 0 still has its payload");
+    var is_ext = false;
+    match token {
+        Ext e => { is_ext = e.typ == 0 && e.v.len == 1; },
+        _ => { is_ext = false; },
+    }
+    expect(is_ext, "match distinguishes an Ext of type 0 from a non-Ext");
+
+    // A zero-length Bin and a non-Bin both give an empty `bytes`.
+    expect_error(msgpack::init(reader, "\xc4\x00"), msgpack::Error.None, "sentinel empty bin init");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "sentinel empty bin token");
+    expect(msgpack::bytes(token).len == 0, "a zero-length Bin has an empty payload");
+    expect(msgpack::count(token) == -1, "a Bin is not a container");
+
+    // An empty container is a container: count is 0, not -1.
+    expect_error(msgpack::init(reader, "\x90"), msgpack::Error.None, "sentinel empty array init");
+    token, error = msgpack::next(reader);
+    expect_error(error, msgpack::Error.None, "sentinel empty array token");
+    expect(msgpack::count(token) == 0, "an empty array has count 0, not -1");
 }

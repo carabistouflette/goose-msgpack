@@ -10,7 +10,7 @@ FUZZ_RUNS ?= 100000
 MUTATE_CASES ?= 20000
 OUTPUT ?= .build/results.json
 .NOTPARALLEL:
-.PHONY: setup format check test test-debug sanitize bench bench-build
+.PHONY: setup format check test test-debug sanitize bench bench-build thirdparty triangulate
 
 setup:
 	./scripts/setup-goose.sh
@@ -25,7 +25,7 @@ check:
 	"$(GOOSE)" check tests/oracle.goose
 	"$(GOOSE)" check examples/plan.goose
 	"$(GOOSE)" check bench/bench.goose
-	python3 -m py_compile tests/oracle.py scripts/sanitize.py scripts/quickstart.py bench/measure.py bench/fixtures.py bench/fetch.py bench/build-baseline.py
+	python3 -m py_compile tests/oracle.py tests/triangulate.py tests/fetch-thirdparty.py scripts/sanitize.py scripts/quickstart.py bench/measure.py bench/fixtures.py bench/fetch.py bench/build-baseline.py
 	git diff --check
 
 test:
@@ -63,6 +63,16 @@ bench-build:
 
 bench: bench-build
 	GOOSE="$(abspath $(GOOSE))" python3 bench/measure.py --samples $(BENCH_SAMPLES) --batch $(BENCH_BATCH) --ms $(BENCH_MS)
+
+# Third-party triangulation: msgpack-c, pinned, as an independent correctness
+# oracle. Not part of `make test`: it clones a repository and builds a C
+# library. `make triangulate` is the gate; it fails on any unclassified
+# disagreement.
+thirdparty:
+	python3 tests/fetch-thirdparty.py
+
+triangulate: thirdparty
+	python3 tests/triangulate.py --goose "$(abspath $(GOOSE))" --cc "$(CC)"
 
 # Coverage-guided fuzzing of the real Goose API, with the negative controls that
 # prove the target can fail. Not part of `make test`: it takes minutes.
