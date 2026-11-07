@@ -407,10 +407,189 @@ same 102723 cases and the same digest. It covers:
 **Limit:** this is a finite seeded campaign, not coverage-guided fuzzing. It
 does not claim to have explored the input space.
 
+## Third-party triangulation
+
+`tests/oracle.py` is written for this library, by the same author, from the same
+reading of the specification. A misreading shared by the library and the oracle
+would be invisible. `make triangulate` adds an implementation written by someone
+else, in another language, and maintained by the MessagePack organisation.
+
+```
+$ make triangulate
+corpus: 724 records, 153046 bytes
+random_tree coverage: [(0, 62), (1, 71), (2, 54), (3, 51), (4, 59), (5, 52),
+                       (6, 50), (7, 54), (8, 46), (9, 61), (10, 59)]
+  agree-accept: 557
+  agree-reject: 87
+  oracle-depth-limit-32: 2
+  oracle-f32-nan-quieting: 1
+  policy-utf8: 77
+triangulation ok: no defect
+```
+
+Pinned inputs, re-checked on every run:
+
+| Component | Revision | Version |
+|---|---|---|
+| `msgpack/msgpack-c` (`c_master`) | `f3f796bbe6a2dd0414520f187cec2e4bd41766bf` | 7.0.3 |
+| `ludocode/mpack` | `c9d1820ecfdbc3954c60a218492251e457cc1f86` | 1.1.1 |
+
+`tests/fetch-thirdparty.py` refuses to proceed if a checkout is at a different
+revision. msgpack-c needs two headers generated from its `cmake/*.in` templates;
+`tests/triangulate.py` generates them deterministically and records their
+hashes in the report.
+
+### The witness
+
+A refusal is never excused on the strength of its own error code. `tests/wire.py`
+is a third implementation — an independent walk of the wire format, written from
+the specification table, sharing no code with the library, the Python oracle or
+msgpack-c. It recomputes the quantities the budgets are stated in (node count,
+open non-empty frames, `str`/`bin`/container lengths, strict UTF-8 validity) and
+the classifier grants a contract difference only when the witness agrees.
+
+Without that gate, a bug that refused valid UTF-8 as `InvalidUtf8`, or a
+one-byte document as `NodeLimit`, would be counted as a policy difference and
+the run would stay green.
+
+```
+$ python3 tests/wire.py
+wire witness ok: 19 marker cases, depth, utf8 and budget checks
+
+$ python3 tests/triangulate.py --selftest
+classifier self-check ok: 16 cases, 12 require a failure
+```
+
+The self-check is the negative control for the gate. It includes a one-byte
+valid document (`0x05`) refused as `InvalidUtf8` and as `NodeLimit` — both must
+be defects — and a `NOMEM` at depth 2, which must be an infrastructure error
+rather than the depth-budget exception.
+
+### What the triangulation found in the alternatives
+
+- **msgpack-c has a depth budget, but it is a fixed 32-frame stack**
+  (`MSGPACK_EMBED_STACK_SIZE`, `unpack_template.h`, marked `FIXME`). A document
+  33 containers deep is refused as `NOMEM`, which is indistinguishable from a
+  real allocation failure at that API. This library accepts up to 256
+  configurable frames and reports `DepthLimit`.
+- **msgpack-c does not preserve `f32` wire bits.** It widens an `f32` to a
+  `double` and narrows it back, which quiets a signalling NaN: `0x7f800001`
+  comes back as `0x7fc00001`. This library keeps the wire bits exactly.
+- **msgpack-c does not validate UTF-8.** 77 corpus records are accepted by
+  msgpack-c and refused by this library with `InvalidUtf8`, each confirmed by
+  the witness to contain genuinely invalid UTF-8.
+
+### The MPack budget controls
+
+The performance comparison against MPack (`bench/bench-mpack.c`) implements
+goose-msgpack's budgets in the traversal, so those budgets need their own
+negative control: a budget that never fires is not a budget.
+
+```
+$ .build/bench/msgpack-bench-mpack budget-selftest
+ok input-budget got 0x1000 want 0x1000
+ok node-budget got 0x1001 want 0x1001
+ok depth-budget got 0x1002 want 0x1002
+ok empty-containers-no-depth got 0x0 want 0x0
+ok str-budget got 0x1004 want 0x1004
+ok bin-budget got 0x1005 want 0x1005
+ok container-budget got 0x1006 want 0x1006
+ok trailing-byte got 0x1003 want 0x1003
+ok invalid-utf8 got 0x200 want 0x200
+ok valid-small-accepted got 0x0 want 0x0
+budget self-check ok: 10 cases, 0 failures
+```
+
+Two of those cases carry more weight than the rest:
+
+- **`empty-containers-no-depth`** is the control for the depth rule. A chain of
+  40 non-empty arrays is refused at depth 32, while an array holding 40 empty
+  arrays is accepted, because an empty container opens no frame. That is the
+  difference between *structural depth* and *open non-empty frames*, and it is
+  the rule `tests/api.goose`'s `depth_empty_child_cases` pins. A comparator that
+  counted structural depth would refuse the second document and the comparison
+  would be against a stricter contract than the one being claimed.
+- **`valid-small-accepted`** is the control against a control that passes by
+  refusing everything. Without it, ten refusals would look like ten successes.
+
+The build under measurement is printed rather than assumed:
+
+```
+$ .build/bench/msgpack-bench-mpack macros
+macro MPACK_DEBUG 0
+macro MPACK_READ_TRACKING 0
+macro MPACK_WRITE_TRACKING 0
+macro MPACK_EXTENSIONS 1
+macro MPACK_STDLIB 1
+macro MPACK_STRINGS 1
+macro MPACK_READER 1
+macro MPACK_WRITER 1
+macro MPACK_MALLOC unused
+size mpack_reader_t 80
+size mpack_writer_t 136
+size mpack_tag_t 16
+```
+
+`MPACK_DEBUG` defaults to 0 unless `DEBUG` or `_DEBUG` is defined, so a plain
+`-O2` compile is already a production build: no asserts, no tracking, no
+allocation for tracking. `make bench-mpack` also builds an explicit
+`-DNDEBUG -DMPACK_DEBUG=0 -DMPACK_READ_TRACKING=0 -DMPACK_WRITE_TRACKING=0`
+variant; it reports the same macro values and produces identical checksums, so
+the two are the same configuration and the comparison is not against a debug
+build.
+
+**Limit:** `budget-depth` cannot be exercised end to end against msgpack-c,
+because any document deeper than this library's 256-frame limit is also deeper
+than msgpack-c's 32-frame stack, so both refuse and the record lands in
+`agree-reject`. That class is proven only by the classifier's negative control.
+The other budget classes would need records larger than 16 MiB to exercise end
+to end and were not exercised in this cycle.
+
+### The MPack harness under AddressSanitizer
+
+The comparator harness is C, so it can have the defects the library cannot: a
+read past the end of a payload is undefined behaviour, not a Goose panic. It is
+built with `-fsanitize=address,undefined` and run over the same inputs.
+
+```
+$ make bench-mpack-sanitize
+$ .build/bench/msgpack-bench-mpack-asan safety-selftest
+ok bin8-truncated/raw got 0x200 want a refusal
+ok bin8-truncated/contract got 0x200 want a refusal
+...
+ok str32-truncated/contract got 0x200 want a refusal
+safety self-check ok: 20 cases, 0 failures
+```
+
+`safety-selftest` exists because the 35 `verify` rows do not cover this path:
+the five fixtures contain no `bin` and no `ext`, so a truncated bin or ext
+payload is never decoded by `verify` at all. The self-test decodes ten truncated
+payloads (bin8/16/32, ext8/16/32, fixstr, str8/16/32) in both the raw and the
+contract column, and each variant is allocated to its exact length so an overrun
+lands on a redzone instead of inside a 64 KiB buffer.
+
+This control found a real defect. The harness skipped a payload with
+`mpack_skip_bytes` and then folded its first and last byte *before* checking
+`mpack_reader_error`, so a truncated payload was sampled past its end. The
+pre-fix code, rebuilt under the same sanitizer, is caught:
+
+```
+==1389426==ERROR: AddressSanitizer: heap-buffer-overflow
+READ of size 1 at 0x77f780de0016 thread T0
+```
+
+The fix checks the reader error immediately after the skip and after the
+`mpack_done_*` call, before anything samples or folds the payload, in the str,
+bin and ext cases. The 35-row `verify` output is unchanged by the fix, which is
+the point: the defect was invisible to the functional comparison.
+
 ## Not executed
 
-- **No performance measurement.** Prepared only; see
-  [bench/README.md](../bench/README.md).
+- **No performance measurement on a quiet host.** The measurements exist and are
+  reported, but every one of them is labelled `exploratory` because the host
+  could not be shown to be quiet; see
+  [bench/README.md](../bench/README.md) and
+  [competitive-review-2026-11-07.md](competitive-review-2026-11-07.md) §6.
 - **No Windows or macOS run.** Linux x86-64 only.
 - **No 32-bit run.** `i64` and `u64` are assumed 64-bit.
 - **No big-endian run.** The float path probes `little_endian()` at runtime,

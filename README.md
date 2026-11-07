@@ -108,7 +108,7 @@ Reader, over a `const u8[:]` the caller owns:
 | `skip(reader)` | `Error`; skip exactly one complete value, children included |
 | `offset(reader)` | `i64`; byte offset of the last error |
 | `consumed(reader)` | `i64`; bytes advanced |
-| `depth(reader)` | `i64`; open containers |
+| `depth(reader)` | `i64`; open **non-empty** frames, not container nesting depth |
 | `remaining(reader)` | `i64`; elements left in the innermost container |
 
 Writer, into a `u8[>..]` the writer grows:
@@ -212,16 +212,29 @@ all rejected; non-characters such as U+FFFE are valid UTF-8 and are accepted.
 
 ## Performance
 
-**No measurement has been recorded.** [bench/](bench/) is a prepared,
-reproducible harness that compares this library with the pinned competitor on
-five fixtures from 77 bytes to 25 KiB, with an invalid-input row, and proves
-both encode byte-identical output before any timing. It runs 25 rows per side:
-encode and decode into a reused buffer and into a fresh one, plus a truncated
-input. Every row folds a content checksum rather than a length, so a faster
-wrong answer is rejected instead of reported. The benchmark operator runs the
-samples serially so no other process competes for the CPU. See
-[bench/README.md](bench/README.md) for the equal-contract statement, the
-allocation costs, and why the competitor column is not classifiable.
+**No state-of-the-art claim is made.** The measurements are labelled with their
+admissibility, and the host used for them could not be shown to be quiet, so
+they are `exploratory`: they support a *comparison* between two builds, not a
+ranking against the world.
+
+[bench/](bench/) compares this library with the pinned Goose competitor and with
+two maintained C implementations (msgpack-c 7.0.3 and MPack 1.1.1) on five
+fixtures from 77 bytes to 25 KiB, with six invalid-input rows. It proves both
+sides encode byte-identical output before any timing, folds a content checksum
+rather than a length so a faster wrong answer is rejected, and computes that
+checksum outside the timed loop so the harness does not measure itself.
+
+The protocol is in [bench/README.md](bench/README.md): paired samples with
+alternating order, one pinned CPU, a bootstrap interval on the ratio, a negative
+control (the same binary against itself must yield a ratio interval containing
+1.0), a batch-invariance control, and a contention record that replaces the old
+absolute load-average gate. The contract matrix, the interoperability and
+ownership costs, and the correctness triangulation are in
+[docs/competitive-review-2026-11-07.md](docs/competitive-review-2026-11-07.md).
+
+The competitor column is **not** an equal-contract comparison: it has no input,
+node, depth, str, bin or container budget, no full-input `finish`, and no UTF-8
+validation. It is a matched valid workload, and it is reported as such.
 
 ## Development
 

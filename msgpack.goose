@@ -798,6 +798,18 @@ fn continuation(b: u8) -> bool { return b >= 0x80 && b <= 0xbf; }
 fn valid_utf8(bytes: const u8[:]) -> bool {
     var i: i64 = 0;
     while i < bytes.len {
+        // ASCII fast path. The byte-at-a-time loop below spends a compare and a
+        // branch on every byte, and real documents are overwhelmingly ASCII:
+        // `perf` put this function at 12.8% of self time on the benchmark
+        // corpus, almost all of it in ASCII payloads. OR-ing eight bytes and
+        // testing the high bit costs one branch per eight bytes and cannot
+        // change the verdict, because a byte with the high bit set makes the OR
+        // at least 0x80 and falls through to the exact checks below.
+        if i + 8 <= bytes.len {
+            let acc = bytes[i] | bytes[i + 1] | bytes[i + 2] | bytes[i + 3] |
+                      bytes[i + 4] | bytes[i + 5] | bytes[i + 6] | bytes[i + 7];
+            if acc < 0x80 { i += 8; continue; }
+        }
         let b = bytes[i];
         if b < 0x80 { i += 1; continue; }
         if b < 0xc2 { return false; }

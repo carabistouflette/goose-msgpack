@@ -25,19 +25,21 @@ What a disagreement means
 
 `agree-accept`   both accept and the canonical forms are identical.
 `agree-reject`   both refuse the record.
-`policy-utf8`    msgpack-c accepts, this library refuses with `InvalidUtf8`.
-                 msgpack-c does not validate UTF-8; this library does, on
-                 purpose. A contract difference, counted and reported.
-`budget-*`       msgpack-c accepts, this library refuses with a budget error.
-                 msgpack-c has no input, node, depth, str, bin or container
-                 budget. A contract difference, counted and reported.
+`policy-utf8`    msgpack-c accepts, this library refuses with `InvalidUtf8`,
+                 and the witness (`tests/wire.py`) confirms at least one str
+                 payload really is invalid UTF-8. msgpack-c does not validate
+                 UTF-8; this library does, on purpose.
+`budget-*`       msgpack-c accepts, this library refuses with a budget error,
+                 and the witness confirms the measured quantity really exceeds
+                 the limit the error names. msgpack-c has no input, node, str,
+                 bin or container budget.
 `oracle-depth-limit-32`
-                 msgpack-c refuses and this library accepts, because
-                 `msgpack_unpack_next` has a fixed 32-frame stack
-                 (`MSGPACK_EMBED_STACK_SIZE`, `unpack_template.h`, marked
-                 `FIXME`) and reports a deeper document as NOMEM. This
-                 library's limit is configurable up to `MAX_DEPTH = 256` and
-                 reports `DepthLimit`. The oracle is the stricter side here.
+                 msgpack-c refuses with NOMEM and this library accepts, and the
+                 witness confirms the document is deeper than msgpack-c's fixed
+                 32-frame stack (`MSGPACK_EMBED_STACK_SIZE`,
+                 `unpack_template.h:141`, marked `FIXME`). This library's limit
+                 is configurable up to `MAX_DEPTH = 256` and reports
+                 `DepthLimit`. The oracle is the stricter side here.
 `oracle-f32-nan-quieting`
                  both accept, and the only difference is that msgpack-c
                  reports an f32 NaN with the quiet bit set. msgpack-c widens
@@ -49,7 +51,17 @@ What a disagreement means
                  - msgpack-c refuses and this library accepts;
                  - this library refuses with `Truncated` or `Reserved` where
                    msgpack-c accepted, which would mean a valid document is
-                   being rejected.
+                   being rejected;
+                 - this library refuses with `InvalidUtf8` or a budget error
+                   that the witness cannot justify (`DEFECT-unjustified-*`).
+`INFRA-nomem`    msgpack-c reported NOMEM at a depth the witness proves is
+                 within its stack, so the failure is an allocation problem, not
+                 the depth budget. Fails the run: an infrastructure failure must
+                 not be excused as a contract difference.
+
+A refusal is never excused on the strength of its own error code. Every
+exception is granted by the witness, which walks the bytes independently of
+both implementations.
 
 The report is written as JSON so a later run can be compared with it.
 """
@@ -60,12 +72,16 @@ import hashlib
 import json
 import os
 import random
+import re
 import struct
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "tests"))
+import wire  # noqa: E402  (the independent witness)
+
 MSGPACK_C_COMMIT = "f3f796bbe6a2dd0414520f187cec2e4bd41766bf"  # c_master, 7.0.3
 MSGPACK_C_VERSION = "7.0.3"
 
@@ -322,12 +338,22 @@ def edge_cases() -> list[tuple[str, bytes]]:
     return rows
 
 
-def random_tree(rng: random.Random, depth: int) -> bytes:
-    """A random valid value, at most `depth` containers deep."""
-    if depth <= 0:
-        kind = rng.randrange(6)
-    else:
-        kind = rng.randrange(10)
+SCALAR_KINDS = 6      # nil, bool, uint, int, f32, f64
+CONTAINER_KINDS = 5   # str, bin, ext, array, map
+KINDS = SCALAR_KINDS + CONTAINER_KINDS
+
+
+def random_tree(rng: random.Random, depth: int, coverage: dict[int, int] | None = None) -> bytes:
+    """A random valid value, at most `depth` containers deep.
+
+    `coverage` counts the kind drawn at each node, so the caller can assert that
+    every branch is reachable. Without that assertion a branch can be dead and
+    the corpus still looks large: `randrange(10)` with ten handled kinds leaves
+    the final `map` branch unreachable, and nothing fails.
+    """
+    kind = rng.randrange(SCALAR_KINDS if depth <= 0 else KINDS)
+    if coverage is not None:
+        coverage[kind] = coverage.get(kind, 0) + 1
     if kind == 0:
         return b"\xc0"
     if kind == 1:
@@ -351,17 +377,18 @@ def random_tree(rng: random.Random, depth: int) -> bytes:
                        bytes(rng.getrandbits(8) for _ in range(rng.choice([0, 1, 2, 4, 8, 16, 17]))))
     if kind == 9:
         n = rng.randrange(0, 5)
-        return enc_array([random_tree(rng, depth - 1) for _ in range(n)])
+        return enc_array([random_tree(rng, depth - 1, coverage) for _ in range(n)])
     n = rng.randrange(0, 4)
-    return enc_map([(enc_str(rng.choice(VALID_UTF8)), random_tree(rng, depth - 1))
+    return enc_map([(enc_str(rng.choice(VALID_UTF8)), random_tree(rng, depth - 1, coverage))
                     for _ in range(n)])
 
 
-def corpus(seed: int, trees: int) -> list[tuple[str, bytes]]:
+def corpus(seed: int, trees: int) -> tuple[list[tuple[str, bytes]], dict[int, int]]:
     rows = edge_cases()
     rng = random.Random(seed)
+    coverage: dict[int, int] = {}
     for i in range(trees):
-        rows.append((f"random-{i}", random_tree(rng, rng.randrange(1, 6))))
+        rows.append((f"random-{i}", random_tree(rng, rng.randrange(1, 6), coverage)))
     # Mutations of a valid document: truncation at every offset, one byte
     # changed, one byte appended. This is where a decoder that reads past the
     # end, or accepts a wrong length, shows up.
@@ -379,7 +406,7 @@ def corpus(seed: int, trees: int) -> list[tuple[str, bytes]]:
             rows.append((f"flip-{pos}-{mask:02x}", bytes(mutated)))
     for extra in (b"\x00", b"\xc1", b"\x90", b"\xff"):
         rows.append((f"append-{extra.hex()}", base + extra))
-    return rows
+    return rows, coverage
 
 
 def write_corpus(rows: list[tuple[str, bytes]], path: Path) -> None:
@@ -479,8 +506,16 @@ BUDGET_REASONS = {
 }
 
 
-def classify(mine: dict, theirs: dict) -> tuple[str, str]:
-    """Return (class, detail) for one record."""
+def classify(mine: dict, theirs: dict, witness: dict) -> tuple[str, str]:
+    """Return (class, detail) for one record.
+
+    A contract difference is only granted when the witness — an independent walk
+    of the bytes, `tests/wire.py` — says the refusal was justified. Without that
+    check the classifier would excuse whatever the refusal code claimed, which
+    is circular: a bug that refused valid UTF-8 as `InvalidUtf8`, or a shallow
+    document as `DepthLimit`, would be counted as a policy difference and never
+    fail the run.
+    """
     if mine["verdict"] == "accept" and theirs["verdict"] == "accept":
         if mine["tokens"] == theirs["tokens"]:
             return "agree-accept", ""
@@ -497,35 +532,170 @@ def classify(mine: dict, theirs: dict) -> tuple[str, str]:
     if mine["verdict"] == "reject" and theirs["verdict"] == "accept":
         reason = mine.get("reason", "")
         if reason == "InvalidUtf8":
-            return "policy-utf8", reason
+            if not witness["invalid_utf8"]:
+                return "DEFECT-unjustified-utf8", (
+                    "refused as InvalidUtf8 but the witness finds no invalid UTF-8 "
+                    f"(status {witness['status']}, {witness['nodes']} nodes)"
+                )
+            return "policy-utf8", (
+                f"{len(witness['invalid_utf8'])} invalid str payload(s) at "
+                f"{witness['invalid_utf8'][:4]}"
+            )
         if reason in BUDGET_REASONS:
-            return BUDGET_REASONS[reason], reason
+            justified, why = wire.budget_exceeded(witness, reason)
+            if not justified:
+                return "DEFECT-unjustified-budget", f"{reason} but {why}"
+            return BUDGET_REASONS[reason], why
         return "DEFECT-we-reject-valid", reason
-    if theirs.get("reason") == "depth-stack":
-        # msgpack_unpack_next has a fixed 32-frame stack
-        # (MSGPACK_EMBED_STACK_SIZE, unpack_template.h:141, marked FIXME) and
-        # reports a deeper document as NOMEM. This library's limit is
-        # configurable up to MAX_DEPTH = 256 and reports DepthLimit. The oracle
-        # is the stricter side here, and the report says so.
-        return "oracle-depth-limit-32", "msgpack-c fixed 32-frame stack"
+    if theirs.get("reason") == "nomem":
+        # msgpack_unpack_next returns NOMEM both when its fixed 32-frame stack
+        # overflows and when a real allocation fails, and the API does not
+        # distinguish them. Only a document the witness proves deeper than that
+        # stack explains it; anything else is an infrastructure failure and must
+        # not be excused.
+        if witness["max_frames"] > wire.MSGPACK_C_STACK:
+            return "oracle-depth-limit-32", (
+                f"msgpack-c fixed {wire.MSGPACK_C_STACK}-frame stack, "
+                f"witness depth {witness['max_frames']}"
+            )
+        return "INFRA-nomem", (
+            f"msgpack-c reported NOMEM at witness depth {witness['max_frames']} "
+            f"<= {wire.MSGPACK_C_STACK}: not explained by the depth budget"
+        )
     return "DEFECT-we-accept-invalid", theirs.get("reason", "")
+
+
+def library_limits() -> dict[str, int]:
+    """The library's widest limits, read from the source that declares them.
+
+    The witness has to compare against the limits the binary actually runs with.
+    Reading them from `msgpack.goose` and asserting they equal `wire.WIDEST`
+    means a limit change cannot silently invalidate every budget exception.
+    """
+    text = (ROOT / "msgpack.goose").read_text()
+    names = {
+        "max_input_bytes": "MAX_INPUT_BYTES",
+        "max_nodes": "MAX_NODES",
+        "max_depth": "MAX_DEPTH",
+        "max_str_bytes": "MAX_STR_BYTES",
+        "max_bin_bytes": "MAX_BIN_BYTES",
+        "max_container_len": "MAX_CONTAINER_LEN",
+    }
+    found = {}
+    for key, name in names.items():
+        match = re.search(rf"const\s+{name}\s*:\s*i64\s*=\s*(\d+)\s*;", text)
+        if not match:
+            raise SystemExit(f"msgpack.goose does not declare {name}")
+        found[key] = int(match.group(1))
+    return found
+
+
+def selftest() -> int:
+    """Negative controls for the classifier.
+
+    The classifier is the part of this driver that decides whether a refusal is
+    a contract difference or a defect. If it excused refusals on the strength of
+    their own error code, a bug that refused valid UTF-8, or a shallow document,
+    would be counted as a policy difference and the run would stay green. These
+    cases feed it refusals that are *not* justified and require it to say so.
+
+    The `mine`/`theirs` verdicts are synthetic: the point is the classifier's
+    decision rule, not msgpack-c's behaviour, which the real run measures.
+    """
+    def mine(verdict: str, reason: str = "", tokens: list[str] | None = None) -> dict:
+        return {"verdict": verdict, "reason": reason, "tokens": tokens or []}
+
+    def theirs(verdict: str, reason: str = "", tokens: list[str] | None = None) -> dict:
+        return {"verdict": verdict, "reason": reason, "tokens": tokens or []}
+
+    shallow = b"\x91\x01"                       # array 1 [ int 1 ]
+    deep = b"\x91" * 300 + b"\x01"              # 300 open frames
+    valid_utf8 = b"\xa2\xc3\xa9"                # str 2 "é"
+    invalid_utf8 = b"\xa1\xff"                  # str 1, lone 0xff
+    short_str = b"\xa1a"
+    one_bin = b"\xc4\x01\x00"
+    one_array = b"\x91\x01"
+    tiny_uint = b"\x05"                         # a single positive fixint
+
+    cases = [
+        # (name, data, mine, theirs, expected class)
+        ("utf8-unjustified", valid_utf8, mine("reject", "InvalidUtf8"), theirs("accept"),
+         "DEFECT-unjustified-utf8"),
+        # A one-byte valid document refused as InvalidUtf8 or NodeLimit is the
+        # sharpest form of the failure this gate exists to catch: there is no
+        # reading of the bytes under which either refusal is justified.
+        ("tiny-uint-as-utf8", tiny_uint, mine("reject", "InvalidUtf8"), theirs("accept"),
+         "DEFECT-unjustified-utf8"),
+        ("tiny-uint-as-nodes", tiny_uint, mine("reject", "NodeLimit"), theirs("accept"),
+         "DEFECT-unjustified-budget"),
+        ("utf8-justified", invalid_utf8, mine("reject", "InvalidUtf8"), theirs("accept"),
+         "policy-utf8"),
+        ("depth-unjustified", shallow, mine("reject", "DepthLimit"), theirs("accept"),
+         "DEFECT-unjustified-budget"),
+        ("depth-justified", deep, mine("reject", "DepthLimit"), theirs("accept"),
+         "budget-depth"),
+        ("str-unjustified", short_str, mine("reject", "StrLimit"), theirs("accept"),
+         "DEFECT-unjustified-budget"),
+        ("bin-unjustified", one_bin, mine("reject", "BinLimit"), theirs("accept"),
+         "DEFECT-unjustified-budget"),
+        ("container-unjustified", one_array, mine("reject", "ContainerLimit"), theirs("accept"),
+         "DEFECT-unjustified-budget"),
+        ("nodes-unjustified", shallow, mine("reject", "NodeLimit"), theirs("accept"),
+         "DEFECT-unjustified-budget"),
+        ("input-unjustified", shallow, mine("reject", "InputLimit"), theirs("accept"),
+         "DEFECT-unjustified-budget"),
+        ("nomem-unjustified", shallow, mine("accept", tokens=["array 1", "int 1"]),
+         theirs("reject", "nomem"), "INFRA-nomem"),
+        ("nomem-justified", deep, mine("accept", tokens=["array 1"]),
+         theirs("reject", "nomem"), "oracle-depth-limit-32"),
+        ("agree", shallow, mine("accept", tokens=["array 1", "int 1"]),
+         theirs("accept", tokens=["array 1", "int 1"]), "agree-accept"),
+        ("tree-differs", shallow, mine("accept", tokens=["array 1", "int 1"]),
+         theirs("accept", tokens=["array 1", "int 2"]), "DEFECT-tree"),
+        ("we-reject-valid", shallow, mine("reject", "Truncated"), theirs("accept"),
+         "DEFECT-we-reject-valid"),
+    ]
+    failures = 0
+    for name, data, a, b, expected in cases:
+        got, detail = classify(a, b, wire.walk(data))
+        if got != expected:
+            print(f"FAIL {name}: {got} != {expected} ({detail})")
+            failures += 1
+    if failures:
+        print(f"{failures} classifier self-check failure(s)")
+        return 1
+    print(f"classifier self-check ok: {len(cases)} cases, "
+          f"{sum(1 for c in cases if c[4].startswith('DEFECT') or c[4].startswith('INFRA'))} "
+          f"require a failure")
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--goose", required=True, help="Pinned goose compiler binary")
+    parser.add_argument("--goose", help="Pinned goose compiler binary (not needed for --selftest)")
     parser.add_argument("--msgpack-c", type=Path, default=ROOT / ".build" / "thirdparty" / "msgpack-c",
                         help="msgpack-c checkout (default .build/thirdparty/msgpack-c)")
     parser.add_argument("--cc", default="clang")
     parser.add_argument("--seed", type=int, default=20261107)
     parser.add_argument("--trees", type=int, default=400, help="Random valid trees to add")
     parser.add_argument("--output", type=Path, default=ROOT / ".build" / "triangulate" / "report.json")
+    parser.add_argument("--selftest", action="store_true",
+                        help="Run the classifier's negative controls and exit")
     args = parser.parse_args()
+
+    if args.selftest:
+        return selftest()
+    if not args.goose:
+        parser.error("--goose is required unless --selftest is given")
 
     msgpack_c = args.msgpack_c.resolve()
     if not (msgpack_c / "include" / "msgpack.h").exists():
         raise SystemExit(f"{msgpack_c} is not a msgpack-c checkout")
+    declared = library_limits()
+    if declared != wire.WIDEST:
+        raise SystemExit(f"tests/wire.py WIDEST {wire.WIDEST} does not match the "
+                         f"limits msgpack.goose declares {declared}")
     head = subprocess.run(["git", "-C", str(msgpack_c), "rev-parse", "HEAD"],
                           capture_output=True, text=True).stdout.strip()
     if head != MSGPACK_C_COMMIT:
@@ -534,9 +704,14 @@ def main() -> int:
     out_dir = args.output.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     corpus_path = out_dir / "corpus.bin"
-    rows = corpus(args.seed, args.trees)
+    rows, coverage = corpus(args.seed, args.trees)
+    missing = [k for k in range(KINDS) if not coverage.get(k)]
+    if missing:
+        raise SystemExit(f"random_tree never produced kind(s) {missing}; "
+                         f"coverage {sorted(coverage.items())}")
     write_corpus(rows, corpus_path)
     print(f"corpus: {len(rows)} records, {corpus_path.stat().st_size} bytes")
+    print(f"random_tree coverage: {sorted(coverage.items())}")
 
     mine_bin = out_dir / "triangulate"
     theirs_bin = out_dir / "triangulate-msgpackc"
@@ -577,10 +752,20 @@ def main() -> int:
     counts: dict[str, int] = {}
     defects: list[dict] = []
     examples: dict[str, list[dict]] = {}
+    witness_disagreements: list[dict] = []
     for (name, data), a, b in zip(rows, mine, theirs):
-        kind, detail = classify(a, b)
+        witness = wire.walk(data)
+        kind, detail = classify(a, b, witness)
         counts[kind] = counts.get(kind, 0) + 1
-        if kind.startswith("DEFECT"):
+        # The witness is a third opinion. Where it and this library both accept,
+        # they must agree token for token; a disagreement is a defect in one of
+        # them and is reported as such rather than folded into a class.
+        if a["verdict"] == "accept" and witness["status"] == "ok" and a["tokens"] != witness["tokens"]:
+            witness_disagreements.append({
+                "name": name, "bytes": data.hex(),
+                "detail": f"goose {len(a['tokens'])} tokens vs witness {len(witness['tokens'])}",
+            })
+        if kind.startswith("DEFECT") or kind.startswith("INFRA"):
             defects.append({"name": name, "bytes": data.hex(), "class": kind, "detail": detail})
         elif kind not in ("agree-accept", "agree-reject"):
             examples.setdefault(kind, [])
@@ -600,6 +785,13 @@ def main() -> int:
             "sha256": hashlib.sha256(corpus_path.read_bytes()).hexdigest(),
             "seed": args.seed,
             "random_trees": args.trees,
+            "random_tree_coverage": {str(k): v for k, v in sorted(coverage.items())},
+        },
+        "witness": {
+            "module": "tests/wire.py",
+            "limits": wire.WIDEST,
+            "msgpack_c_stack": wire.MSGPACK_C_STACK,
+            "disagreements": witness_disagreements,
         },
         "counts": counts,
         "contract_differences": examples,
@@ -616,6 +808,11 @@ def main() -> int:
     for kind in sorted(counts):
         print(f"  {kind}: {counts[kind]}")
     print(f"report: {args.output}")
+    if witness_disagreements:
+        print(f"FAIL: {len(witness_disagreements)} witness disagreement(s)", file=sys.stderr)
+        for row in witness_disagreements[:10]:
+            print(f"  {row['name']}: {row['detail']}", file=sys.stderr)
+        return 1
     if defects:
         print(f"FAIL: {len(defects)} defect(s)", file=sys.stderr)
         for defect in defects[:10]:

@@ -35,10 +35,22 @@
 // memory order; both binaries run on the same host in the same run, and the
 // report records the host.
 //
-// msgpack-c does not validate UTF-8, has no depth or node budget, and has no
-// full-input contract beyond the caller comparing `off` to `len`. Those are
-// contract differences, not defects, and the driver classifies them instead of
-// hiding them.
+// Contract differences, measured rather than assumed:
+//
+//   - msgpack-c does not validate UTF-8. This library does, on purpose.
+//   - msgpack-c has no input, node, str, bin or container budget.
+//   - msgpack-c DOES have a depth budget, but it is a fixed 32-frame stack
+//     (MSGPACK_EMBED_STACK_SIZE, unpack_template.h:141, marked FIXME), not a
+//     configurable limit. A deeper document is reported as NOMEM, which is
+//     indistinguishable from a real allocation failure at this API. This
+//     oracle therefore reports `reject nomem` and nothing more; the driver
+//     decides whether the depth explains it, using an independent walk of the
+//     bytes. Renaming NOMEM to "depth" here would hide an allocation failure.
+//   - msgpack-c has no full-input contract beyond the caller comparing `off`
+//     to `len`.
+//
+// Those are contract differences, not defects, and the driver classifies them
+// instead of hiding them.
 #include <msgpack.h>
 
 #include <stdbool.h>
@@ -79,9 +91,12 @@ static void emit(const msgpack_object *o) {
         printf("int %lld\n", (long long)o->via.i64);
         break;
     case MSGPACK_OBJECT_FLOAT32: {
-        // msgpack-c widens an f32 to a double but keeps the type. Narrowing
-        // back is exact, including the NaN payload, so the raw bytes are the
-        // ones that were on the wire.
+        // msgpack-c stores an f32 as a widened double and narrows it back on
+        // the way out. That round trip is NOT exact for every payload: widening
+        // a signalling NaN sets the quiet bit, so 0x7f800001 comes back as
+        // 0x7fc00001. The bytes printed here are what msgpack-c reports, which
+        // is why the driver has a separate `oracle-f32-nan-quieting` class
+        // instead of treating the difference as a defect of this library.
         float f = (float)o->via.f64;
         printf("f32 ");
         put_hex((const char *)&f, 4);
@@ -164,10 +179,13 @@ int main(int argc, char **argv) {
         // Comparing against SUCCESS explicitly is the only correct test.
         msgpack_unpack_return ret = msgpack_unpack_next(&result, buf, len, &off);
         if (ret == MSGPACK_UNPACK_NOMEM_ERROR) {
-            // msgpack_unpack_next has a fixed 32-frame stack
-            // (MSGPACK_EMBED_STACK_SIZE, unpack_template.h) and reports a
-            // deeper document as NOMEM. Named so the driver can classify it.
-            printf("reject depth-stack\n");
+            // Reported as what it is. msgpack_unpack_next returns NOMEM both
+            // when its fixed 32-frame stack overflows and when a real
+            // allocation fails, and the API does not distinguish them. The
+            // driver decides which, from an independent walk of the bytes; if
+            // the depth does not explain it, the run fails as an
+            // infrastructure error rather than being excused.
+            printf("reject nomem\n");
         } else if (ret == MSGPACK_UNPACK_PARSE_ERROR) {
             printf("reject parse\n");
         } else if (ret == MSGPACK_UNPACK_CONTINUE) {

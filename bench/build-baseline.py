@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 def sha256_file(path: Path) -> str:
@@ -44,8 +45,18 @@ def main() -> int:
                         default=ROOT / ".build" / "bench" / "msgpack-bench-baseline")
     parser.add_argument("--scratch", type=Path,
                         default=ROOT / ".build" / "bench" / "baseline-tree")
-    parser.add_argument("--cc", default="clang")
+    # The compiler is required, not defaulted. A default here is how the
+    # baseline came to be built with clang while the candidate was built with
+    # gcc, which made every old-vs-new number a comparison of compilers as well
+    # as of libraries. `CC` is honoured so a Makefile can pass it through.
+    parser.add_argument("--cc", default=os.environ.get("CC", ""),
+                        help="The compiler to build with. Required: it must be the "
+                             "same one the candidate binary was built with.")
     args = parser.parse_args()
+    if not args.cc:
+        raise SystemExit("--cc (or CC in the environment) is required. The baseline "
+                         "must be built with the same compiler as the candidate, or "
+                         "the comparison is confounded.")
 
     goose = os.environ.get("GOOSE", "")
     if not goose or not Path(goose).exists():
@@ -85,7 +96,18 @@ def main() -> int:
     }
     sidecar = args.out.with_suffix(".json")
     sidecar.write_text(json.dumps(record, indent=2) + "\n")
+
+    # The full build provenance, so `paired.py` can check that the compiler,
+    # flags, runtime headers and linked libraries match the candidate's.
+    import provenance
+    data = provenance.record(
+        args.out, args.cc, command, ["-O2"],
+        [args.tree / "msgpack.goose", ROOT / "bench" / "bench.goose"],
+        os.environ.get("GOOSE"),
+    )
+    provenance.write(args.out, data)
     print(json.dumps(record, indent=2))
+    print(f"compiler: {data['compiler']['version']} ({data['compiler']['path']})")
     return 0
 
 

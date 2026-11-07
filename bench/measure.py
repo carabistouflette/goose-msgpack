@@ -143,15 +143,27 @@ def parse_verify(text: str) -> dict[str, bytes]:
     return rows
 
 
-def parse_time(text: str) -> dict[tuple[str, str], tuple[int, int]]:
-    rows = {}
+def parse_time(text: str) -> dict[tuple[str, str], float]:
+    """Parse `time <fixture> <op> <n> <dt_ns>` into ns per call.
+
+    The binary prints two totals, never a rate: `n` calls took `dt_ns`
+    nanoseconds. The division happens here, exactly once. An earlier version of
+    the harness printed a rate next to the batch size and this reader divided by
+    the batch again, which understated every row by the batch size. Reports
+    produced before that fix are labelled `invalid-unit` and must not be
+    compared with anything.
+    """
+    rows: dict[tuple[str, str], float] = {}
     for line in text.splitlines():
         parts = line.split()
         if len(parts) == 3 and parts[0] == "na":
             continue  # not applicable for this binary; paired from the other side
         if len(parts) != 5 or parts[0] != "time":
             raise SystemExit(f"unexpected time row: {line!r}")
-        rows[(parts[1], parts[2])] = (int(parts[3]), int(parts[4]))
+        n, dt = int(parts[3]), int(parts[4])
+        if n <= 0:
+            raise SystemExit(f"time row with n={n}: {line!r}")
+        rows[(parts[1], parts[2])] = dt / n
     return rows
 
 
@@ -279,8 +291,8 @@ def measure(args) -> dict:
         for label, binary in order:
             text, peak_kib = run_measured(binary, str(args.batch), str(args.ms))
             rss[label].append(peak_kib)
-            for key, (batch, ns) in parse_time(text).items():
-                samples[label].setdefault(key, []).append(ns / batch)
+            for key, ns_per_call in parse_time(text).items():
+                samples[label].setdefault(key, []).append(ns_per_call)
         if (index + 1) % 5 == 0:
             print(f"  {index + 1}/{args.samples} samples")
 
