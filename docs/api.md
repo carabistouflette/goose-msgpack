@@ -59,6 +59,12 @@ On error the reader is poisoned: every later `next` returns the same error, and
 
 True when the top-level value and all its children have been read.
 
+`done` is terminal for this reader. A `next` after it returns `InvalidState`
+and poisons the reader, so a caller that wants to read a second document out of
+the same buffer must re-`init` over `input[consumed(reader)..]` rather than
+keep calling `next`. The writer may emit a sequence of values; the reader
+deliberately reads exactly one, and `finish` enforces that.
+
 ### `finish(reader) -> Error`
 
 A pure check, not a mutation. Returns:
@@ -192,6 +198,13 @@ with `StrLimit` after reading five bytes, not after allocating 4 GiB. The
 reader allocates nothing at all: its depth stack is a fixed `i64[..256]`
 inside the `Reader` value, so a `Reader` is 2 KiB and a container costs one
 `i64` slot, never a node.
+
+A container header is also checked for feasibility against the bytes that
+remain: an `array` declaring more elements than there are bytes left, or a
+`map` declaring more pairs than there are byte pairs left, is rejected with
+`Truncated` **at the header offset**, before the container token is returned.
+So a truncated container never yields a token whose count the caller could not
+possibly satisfy.
 
 ## Not enforced
 

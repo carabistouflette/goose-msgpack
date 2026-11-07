@@ -125,8 +125,9 @@ Writer, into a `u8[>..]` the writer grows:
 
 Accessors on a `Token`: `as_i64`, `as_u64`, `as_f64`, `as_bool`, `text`,
 `bytes`, `ext_type`, `count`. Each returns `value, bool` except `text`,
-`bytes`, `ext_type` and `count`, which return the payload or `0` for a token
-that has none.
+`bytes` and `ext_type`, which return the payload or `""` for a token that has
+none. `count` returns the declared element count of an `Array` or the pair
+count of a `Map`, and `-1` for every other token.
 
 `Int` and `Uint` report the **wire family**, not the mathematical sign: a
 positive fixint is `Uint`, a negative fixint is `Int`. Use `as_i64` when the
@@ -180,10 +181,13 @@ all rejected; non-characters such as U+FFFE are valid UTF-8 and are accepted.
 **No measurement has been recorded.** [bench/](bench/) is a prepared,
 reproducible harness that compares this library with the pinned competitor on
 five fixtures from 77 bytes to 25 KiB, with an invalid-input row, and proves
-both encode byte-identical output before any timing. The benchmark operator runs the
+both encode byte-identical output before any timing. It runs 25 rows per side:
+encode and decode into a reused buffer and into a fresh one, plus a truncated
+input. Every row folds a content checksum rather than a length, so a faster
+wrong answer is rejected instead of reported. The benchmark operator runs the
 samples serially so no other process competes for the CPU. See
-[bench/README.md](bench/README.md) for the equal-contract statement and the
-allocation costs.
+[bench/README.md](bench/README.md) for the equal-contract statement, the
+allocation costs, and why the competitor column is not classifiable.
 
 ## Development
 
@@ -194,6 +198,8 @@ make test           # contract tests, 100k-case differential oracle, example
 make test-debug     # the same under Goose debug checks
 make sanitize SANITIZER_CC=gcc     # ASan/UBSan over the whole corpus
 make sanitize SANITIZER_CC=clang
+make fuzz           # 2 x 120 s coverage-guided campaigns + 8 negative controls
+make mutate         # 16 targeted mutants, both suites
 make bench-build    # compile both benchmark binaries, no timing
 ```
 
