@@ -2,6 +2,7 @@ GOOSE ?= .toolchain/goose/build/goose
 CC ?= gcc
 SANITIZER_CC ?= gcc
 ORACLE_CASES ?= 100000
+PLAN_CASES ?= 512
 BENCH_SAMPLES ?= 20
 BENCH_BATCH ?= 64
 BENCH_MS ?= 200
@@ -19,13 +20,17 @@ format:
 	"$(GOOSE)" format msgpack.goose tests examples bench
 
 check:
+	python3 scripts/check-task-vendor.py
 	"$(GOOSE)" format --check msgpack.goose tests examples bench
 	"$(GOOSE)" check msgpack.goose
 	"$(GOOSE)" check tests/api.goose
 	"$(GOOSE)" check tests/oracle.goose
 	"$(GOOSE)" check examples/plan.goose
+	"$(GOOSE)" check tests/plan_consumer.goose
+	"$(GOOSE)" check tests/plan_model.goose
 	"$(GOOSE)" check bench/bench.goose
 	python3 -m py_compile tests/oracle.py tests/wire.py tests/triangulate.py tests/fetch-thirdparty.py scripts/sanitize.py scripts/quickstart.py bench/measure.py bench/paired.py bench/contention.py bench/fixtures.py bench/fetch.py bench/build-baseline.py
+	python3 -m py_compile scripts/check-task-vendor.py tests/plan_model.py tests/plan_process.py tests/plan_process_test.py
 	python3 tests/wire.py
 	python3 tests/triangulate.py --selftest
 	python3 bench/paired.py --selftest
@@ -34,6 +39,11 @@ check:
 
 test:
 	mkdir -p .build
+	python3 tests/plan_process_test.py
+	"$(GOOSE)" run tests/plan_consumer.goose
+	"$(GOOSE)" build tests/plan_consumer.goose --standalone --cc "$(CC)" -O2 -o .build/plan-consumer
+	./.build/plan-consumer
+	python3 tests/plan_model.py --goose "$(abspath $(GOOSE))" --cc "$(CC)" --cases $(PLAN_CASES)
 	"$(GOOSE)" run tests/api.goose
 	python3 tests/oracle.py --goose "$(abspath $(GOOSE))" --cases $(ORACLE_CASES) --output .build/oracle.json
 	"$(GOOSE)" build tests/api.goose --standalone --cc "$(CC)" -O2 -o .build/api
@@ -47,6 +57,10 @@ test:
 
 test-debug:
 	mkdir -p .build
+	"$(GOOSE)" run tests/plan_consumer.goose --debug
+	"$(GOOSE)" build tests/plan_consumer.goose --standalone --debug --cc "$(CC)" -o .build/plan-consumer-debug
+	./.build/plan-consumer-debug
+	python3 tests/plan_model.py --goose "$(abspath $(GOOSE))" --cc "$(CC)" --debug --cases $(PLAN_CASES)
 	"$(GOOSE)" run tests/api.goose --debug
 	python3 tests/oracle.py --goose "$(abspath $(GOOSE))" --debug --cases $(ORACLE_CASES) --output .build/oracle-debug.json
 	"$(GOOSE)" build tests/api.goose --standalone --debug --cc "$(CC)" -o .build/api-debug

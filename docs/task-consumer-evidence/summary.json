@@ -1,0 +1,35 @@
+{
+  "source": "8537bc83f668899a198ca90cff7555784d2c54ed",
+  "codec_unchanged": true,
+  "task_revision": "166b684ca96403fea94072cc8e0c630321fb832d",
+  "configurations": {
+    "release": {
+      "cases": 512,
+      "wire_and_expected_sha256": "52afb48b0b14fb00d95d5ef03c049225c9e044af4ae931432441f9a944ee1c84",
+      "binary_sha256": "90867a5ec33220a9824d8a6658ba04bd1adb6ee6afd8507ac8980e768b1e9edc"
+    },
+    "debug": {
+      "cases": 512,
+      "wire_and_expected_sha256": "52afb48b0b14fb00d95d5ef03c049225c9e044af4ae931432441f9a944ee1c84",
+      "binary_sha256": "ef6791e0d938e5f1da824fc78dfad3d247e61517b9f19bc8b32c97ea326bc545"
+    },
+    "gcc-sanitize": {
+      "cases": 512,
+      "wire_and_expected_sha256": "52afb48b0b14fb00d95d5ef03c049225c9e044af4ae931432441f9a944ee1c84",
+      "binary_sha256": "67b41c197446bc961bbde6451571166cf2d2d46858d989e66cb8bfc1c8ad04b3"
+    },
+    "clang-sanitize": {
+      "cases": 512,
+      "wire_and_expected_sha256": "52afb48b0b14fb00d95d5ef03c049225c9e044af4ae931432441f9a944ee1c84",
+      "binary_sha256": "121bc769d691101fcd2d6cc5aec0437c1f32285b5813ede0f26cde306e3a8794"
+    }
+  },
+  "distinct_wire_cases": 512,
+  "process_selftests": 4,
+  "outcomes": {
+    "D ": 79,
+    "C ": 158,
+    "E ": 275
+  },
+  "scope": "Correctness of an example wire handoff and caller policy; no OS worker, signal cleanup or throughput guarantee."
+}

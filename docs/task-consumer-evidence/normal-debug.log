@@ -1,0 +1,75 @@
+make: Entering directory '/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer'
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" format msgpack.goose tests examples bench
+python3 scripts/check-task-vendor.py
+example-only goose-task pin verified: 166b684ca96403fea94072cc8e0c630321fb832d
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" format --check msgpack.goose tests examples bench
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" check msgpack.goose
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" check tests/api.goose
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" check tests/oracle.goose
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" check examples/plan.goose
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" check tests/plan_consumer.goose
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" check tests/plan_model.goose
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" check bench/bench.goose
+python3 -m py_compile tests/oracle.py scripts/sanitize.py scripts/quickstart.py bench/measure.py bench/fixtures.py bench/fetch.py
+python3 -m py_compile scripts/check-task-vendor.py tests/plan_model.py tests/plan_process.py tests/plan_process_test.py
+git diff --check
+mkdir -p .build
+python3 tests/plan_process_test.py
+....
+----------------------------------------------------------------------
+Ran 4 tests in 2.029s
+
+OK
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" run tests/plan_consumer.goose
+wire-plan consumer contracts passed
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" build tests/plan_consumer.goose --standalone --cc "cc" -O2 -o .build/plan-consumer
+built .build/plan-consumer
+./.build/plan-consumer
+wire-plan consumer contracts passed
+python3 tests/plan_model.py --goose "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" --cc "cc" --cases 512
+wire scheduling model passed: 512 cases
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" run tests/api.goose
+msgpack api ok: 420 checks
+python3 tests/oracle.py --goose "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" --cases 100000 --output .build/oracle.json
+msgpack oracle: 102723 differential cases passed; corpus 453ae1128e2e069b
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" build tests/api.goose --standalone --cc "cc" -O2 -o .build/api
+built .build/api
+./.build/api
+msgpack api ok: 420 checks
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" build tests/oracle.goose --standalone --cc "cc" -O2 -o .build/oracle
+built .build/oracle
+python3 tests/oracle.py --binary .build/oracle --cases 100000 --output .build/oracle-native.json
+msgpack oracle: 102723 differential cases passed; corpus 453ae1128e2e069b
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" run examples/plan.goose
+manifest: 69 bytes
+decoded plan completed: 4 succeeded
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" build examples/plan.goose --standalone --cc "cc" -O2 -o .build/plan
+built .build/plan
+./.build/plan
+manifest: 69 bytes
+decoded plan completed: 4 succeeded
+python3 scripts/quickstart.py --goose "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose"
+README quickstart ok
+mkdir -p .build
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" run tests/plan_consumer.goose --debug
+wire-plan consumer contracts passed
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" build tests/plan_consumer.goose --standalone --debug --cc "cc" -o .build/plan-consumer-debug
+built .build/plan-consumer-debug
+./.build/plan-consumer-debug
+wire-plan consumer contracts passed
+python3 tests/plan_model.py --goose "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" --cc "cc" --debug --cases 512
+wire scheduling model passed: 512 cases
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" run tests/api.goose --debug
+msgpack api ok: 420 checks
+python3 tests/oracle.py --goose "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" --debug --cases 100000 --output .build/oracle-debug.json
+msgpack oracle: 102723 differential cases passed; corpus 453ae1128e2e069b
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" build tests/api.goose --standalone --debug --cc "cc" -o .build/api-debug
+built .build/api-debug
+./.build/api-debug
+msgpack api ok: 420 checks
+"/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" run examples/plan.goose --debug
+manifest: 69 bytes
+decoded plan completed: 4 succeeded
+python3 scripts/quickstart.py --goose "/home/arobin/Work/Projects/goose-libs/honk/.build/qualification-toolchain/build/goose" --debug
+README quickstart ok
+make: Leaving directory '/home/arobin/Work/Projects/goose-libs/.build/task-msgpack-consumer'

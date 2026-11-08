@@ -75,9 +75,11 @@ fn main() {
 }
 ```
 
-The runnable example is [examples/plan.goose](examples/plan.goose): a
-`goose-task` build-plan manifest, the handoff a planner and a runner in
-separate processes need. From a checkout with the pinned compiler:
+The runnable [wire-plan example](examples/plan.goose) decodes a bounded
+manifest and initializes the pinned goose-task scheduler with its unchanged
+`start(scheduler, count, edges, concurrency, limits)` interface. The codec
+itself remains dependency-free; task is vendored for this example/tests only.
+From a checkout with the pinned compiler:
 
 ```sh
 make setup
@@ -88,12 +90,15 @@ Observed output:
 
 ```
 manifest: 69 bytes
-plan v1: 4 tasks, concurrency 2, 3 edges 0->2 1->2 2->3
-padded manifest rejected: Error.TrailingBytes
-self-loop rejected: Error.SelfLoop
+decoded plan completed: 4 succeeded
 ```
 
-The example is executed by `make test`, so the quickstart cannot rot silently.
+This is an example workflow, not a production build runner: work completion
+is supplied by the caller, and no worker/process is spawned. The
+[wire contract and consumer qualification](docs/TASK-CONSUMER.md) cover strict
+schema rejection, graph errors, failure propagation, deterministic FIFO order
+and caller-owned cancellation. `make test` checks the example and consumer;
+`make test-debug` and both sanitizer configurations also exercise the handoff.
 
 ## API
 
