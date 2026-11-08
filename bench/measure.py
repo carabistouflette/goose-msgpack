@@ -13,11 +13,12 @@ result is auditable.
 
 What a run does, in order:
 
-1. `verify` on both binaries and compare every fixture against
+1. `verify` on both binaries and compare every valid fixture against
    bench/fixtures.py, which encodes the same value with the independent encoder
-   in tests/oracle.py. A single differing byte aborts the run.
-2. Check the two binaries agree with each other, so the paired rows really do
-   measure the same workload.
+   in tests/oracle.py. It also checks that both binaries publish the same six
+   invalid-input variants per fixture. A missing or differing byte aborts the run.
+2. Check the two binaries agree on both valid fixtures and invalid input bytes,
+   so the paired rows really do measure the same workload.
 3. `checksum` on both binaries: the content checksum each row folds, computed
    once. These are re-checked after the timing passes, so a run whose numbers
    came from different work than the checksums describe is rejected.
@@ -63,6 +64,14 @@ COMPETITOR = ROOT / ".build" / "bench" / "msgpack-bench-competitor"
 
 MIN_SAMPLES = 20
 MIN_WARMUP = 1
+INVALID_OPS = (
+    "truncated-end",
+    "truncated-start",
+    "truncated-middle",
+    "corrupt-start",
+    "corrupt-middle",
+    "corrupt-end",
+)
 
 NOT_CLASSIFIABLE = (
     "The competitor column is not an equal-contract comparison. "
@@ -130,17 +139,31 @@ def run_measured(binary: Path, *args: str) -> tuple[str, int]:
     return b"".join(chunks).decode(), usage.ru_maxrss
 
 
-def parse_verify(text: str) -> dict[str, bytes]:
-    rows = {}
+def parse_verify(text: str) -> tuple[dict[str, bytes], dict[tuple[str, str], bytes]]:
+    fixtures_by_name: dict[str, bytes] = {}
+    invalid_by_case: dict[tuple[str, str], bytes] = {}
     for line in text.splitlines():
-        parts = line.split()
-        if len(parts) != 6 or parts[0] != "fixture" or parts[2] != "bytes" or parts[4] != "hex":
+        prefix, separator, hex_data = line.rpartition(" hex ")
+        if not separator:
             raise SystemExit(f"unexpected verify row: {line!r}")
-        data = bytes.fromhex(parts[5])
-        if len(data) != int(parts[3]):
-            raise SystemExit(f"{parts[1]}: declared {parts[3]} bytes, got {len(data)}")
-        rows[parts[1]] = data
-    return rows
+        parts = prefix.split()
+        if len(parts) == 4 and parts[0] == "fixture" and parts[2] == "bytes":
+            key = parts[1]
+            rows = fixtures_by_name
+            declared = parts[3]
+        elif len(parts) == 5 and parts[0] == "invalid" and parts[3] == "bytes":
+            key = (parts[1], parts[2])
+            rows = invalid_by_case
+            declared = parts[4]
+        else:
+            raise SystemExit(f"unexpected verify row: {line!r}")
+        data = bytes.fromhex(hex_data)
+        if len(data) != int(declared):
+            raise SystemExit(f"{key}: declared {declared} bytes, got {len(data)}")
+        if key in rows:
+            raise SystemExit(f"duplicate verify row: {key}")
+        rows[key] = data
+    return fixtures_by_name, invalid_by_case
 
 
 def parse_time(text: str) -> dict[tuple[str, str], float]:
@@ -183,22 +206,35 @@ def parse_checksum(text: str) -> tuple[dict[tuple[str, str], int], set[tuple[str
 
 def verify(bench: Path) -> dict:
     expected = {row["name"]: row for row in fixtures.expected()}
-    mine = parse_verify(run(bench, "verify"))
-    theirs = parse_verify(run(COMPETITOR, "verify"))
+    mine, mine_invalid = parse_verify(run(bench, "verify"))
+    theirs, theirs_invalid = parse_verify(run(COMPETITOR, "verify"))
     if set(mine) != set(expected):
         raise SystemExit(f"fixture names differ: {sorted(mine)} vs {sorted(expected)}")
     if set(theirs) != set(expected):
         raise SystemExit(f"competitor fixture names differ: {sorted(theirs)} vs {sorted(expected)}")
+    expected_invalid = {(name, op) for name in expected for op in INVALID_OPS}
+    for label, rows in (("goose-msgpack", mine_invalid), ("competitor", theirs_invalid)):
+        if set(rows) != expected_invalid:
+            raise SystemExit(
+                f"{label} invalid cases differ: missing {sorted(expected_invalid - set(rows))}, "
+                f"extra {sorted(set(rows) - expected_invalid)}")
     for name, row in expected.items():
         for label, data in (("goose-msgpack", mine[name]), ("competitor", theirs[name])):
             if len(data) != row["bytes"] or hashlib.sha256(data).hexdigest() != row["sha256"]:
                 raise SystemExit(f"{label} {name}: bytes disagree with bench/fixtures.py")
         if mine[name] != theirs[name]:
             raise SystemExit(f"{name}: the two libraries encode different bytes")
+    for key in sorted(expected_invalid):
+        if mine_invalid[key] != theirs_invalid[key]:
+            raise SystemExit(f"{key}: the two libraries publish different invalid input bytes")
     return {"table_sha256": fixtures.table_digest(),
             "rows": [{"name": name, "bytes": len(mine[name]),
                       "sha256": hashlib.sha256(mine[name]).hexdigest()}
-                     for name in expected]}
+                     for name in expected],
+            "invalid_rows": [{"fixture": name, "operation": op,
+                              "bytes": len(mine_invalid[(name, op)]),
+                              "sha256": hashlib.sha256(mine_invalid[(name, op)]).hexdigest()}
+                             for name, op in sorted(expected_invalid)]}
 
 
 def provenance() -> dict:
@@ -268,7 +304,8 @@ def measure(args) -> dict:
 
     before = provenance()
     checked = verify(bench)
-    print(f"verify: {len(checked['rows'])} fixtures, both libraries byte-identical")
+    print(f"verify: {len(checked['rows'])} fixtures, {len(checked['invalid_rows'])} invalid inputs, "
+          "both libraries byte-identical")
 
     sums = {"goose-msgpack": parse_checksum(run(bench, "checksum")),
             "competitor": parse_checksum(run(COMPETITOR, "checksum"))}
