@@ -110,10 +110,10 @@ Reader, over a `const u8[:]` the caller owns:
 | `next(reader)` | `Token, Error`; one wire value |
 | `done(reader)` | `bool`; the top-level value is complete |
 | `finish(reader)` | `Error`; `TrailingBytes` unless exactly one value was read |
-| `skip(reader)` | `Error`; consume the rest of the current container |
+| `skip(reader)` | `Error`; skip exactly one complete value, children included |
 | `offset(reader)` | `i64`; byte offset of the last error |
 | `consumed(reader)` | `i64`; bytes advanced |
-| `depth(reader)` | `i64`; open containers |
+| `depth(reader)` | `i64`; open **non-empty** frames, not container nesting depth |
 | `remaining(reader)` | `i64`; elements left in the innermost container |
 
 Writer, into a `u8[>..]` the writer grows:
@@ -128,10 +128,38 @@ Writer, into a `u8[>..]` the writer grows:
 | `output(writer)` | `const u8[:]`; the bytes written |
 | `written(writer)` | `i64` |
 
-Accessors on a `Token`: `as_i64`, `as_u64`, `as_f64`, `as_bool`, `text`,
-`bytes`, `ext_type`, `count`. Each returns `value, bool` except `text`,
-`bytes`, `ext_type` and `count`, which return the payload or `0` for a token
-that has none.
+Accessors on a `Token`:
+
+| Accessor | Returns | For a token that does not match |
+| --- | --- | --- |
+| `as_i64(token)` | `i64, bool` | `0, false` |
+| `as_u64(token)` | `u64, bool` | `0, false` |
+| `as_f64(token)` | `f64, bool` | `0.0, false` |
+| `as_bool(token)` | `bool, bool` | `false, false` |
+| `text(token)` | `const u8[:]` | `""` |
+| `bytes(token)` | `const u8[:]` | `""` |
+| `ext_type(token)` | `i8` | `0` |
+| `count(token)` | `i64` | `-1` |
+
+`count` is the declared element count of an `Array` or the pair count of a
+`Map`. `text` is the payload of a `Str`, already validated as UTF-8. `bytes` is
+the payload of a `Bin` or an `Ext`.
+
+`ext_type` is the one accessor whose sentinel collides with a real value: `0`
+is a valid extension type, so `ext_type(token) == 0` does not tell you whether
+the token is an `Ext` of type 0 or not an `Ext` at all. The same is true of
+`bytes(token) == ""`, which is both a zero-length `Bin` and a non-`Bin`. When
+the distinction matters, match on the token:
+
+```goose
+match token {
+    Ext e => { /* e.typ and e.v are the real values */ },
+    _ => { /* not an extension */ },
+}
+```
+
+The accessors are conveniences for the case where the caller already knows the
+token's family, which is the common case in a schema walk.
 
 `Int` and `Uint` report the **wire family**, not the mathematical sign: a
 positive fixint is `Uint`, a negative fixint is `Int`. Use `as_i64` when the
@@ -147,7 +175,7 @@ sign is what matters.
 | `max_input_bytes` | 1 MiB | 64 MiB | `init` |
 | `max_output_bytes` | 1 MiB | 64 MiB | before every write |
 | `max_nodes` | 65536 | 1048576 | before every value |
-| `max_depth` | 32 | 256 | before opening a container |
+| `max_depth` | 32 | 256 | before opening a non-empty container frame |
 | `max_str_bytes` | 256 KiB | 16 MiB | before the payload is read |
 | `max_bin_bytes` | 256 KiB | 16 MiB | before the payload is read |
 | `max_container_len` | 65536 | 1048576 | before the header is accepted |
@@ -156,6 +184,13 @@ A budget is checked against the declared length in the header, so a 4 GiB
 `str32` header is rejected without reading or reserving 4 GiB. The reader
 allocates nothing at all: the depth stack is a fixed `i64[..256]` inside the
 `Reader` value.
+
+`max_depth` counts **open non-empty frames**, not containers on a path. An
+empty container is a leaf: it opens no frame and is accepted at any depth, so
+the container nesting depth of an accepted document is at most
+`max_depth + 1`. Set `max_depth = N - 1` if you need "at most N containers on
+any path". [docs/api.md](docs/api.md#depth-accounting) has the table and the
+argument; `depth_semantics_cases` in [tests/api.goose](tests/api.goose) pins it.
 
 ## UTF-8 policy
 
@@ -182,13 +217,29 @@ all rejected; non-characters such as U+FFFE are valid UTF-8 and are accepted.
 
 ## Performance
 
-**No measurement has been recorded.** [bench/](bench/) is a prepared,
-reproducible harness that compares this library with the pinned competitor on
-five fixtures from 77 bytes to 25 KiB, with an invalid-input row, and proves
-both encode byte-identical output before any timing. The benchmark operator runs the
-samples serially so no other process competes for the CPU. See
-[bench/README.md](bench/README.md) for the equal-contract statement and the
-allocation costs.
+**No state-of-the-art claim is made.** The measurements are labelled with their
+admissibility, and the host used for them could not be shown to be quiet, so
+they are `exploratory`: they support a *comparison* between two builds, not a
+ranking against the world.
+
+[bench/](bench/) compares this library with the pinned Goose competitor and with
+two maintained C implementations (msgpack-c 7.0.3 and MPack 1.1.1) on five
+fixtures from 77 bytes to 25 KiB, with six invalid-input rows. It proves both
+sides encode byte-identical output before any timing, folds a content checksum
+rather than a length so a faster wrong answer is rejected, and computes that
+checksum outside the timed loop so the harness does not measure itself.
+
+The protocol is in [bench/README.md](bench/README.md): paired samples with
+alternating order, one pinned CPU, a bootstrap interval on the ratio, a negative
+control (the same binary against itself must yield a ratio interval containing
+1.0), a batch-invariance control, and a contention record that replaces the old
+absolute load-average gate. The contract matrix, the interoperability and
+ownership costs, and the correctness triangulation are in
+[docs/competitive-review-2026-11-07.md](docs/competitive-review-2026-11-07.md).
+
+The competitor column is **not** an equal-contract comparison: it has no input,
+node, depth, str, bin or container budget, no full-input `finish`, and no UTF-8
+validation. It is a matched valid workload, and it is reported as such.
 
 ## Development
 
@@ -199,6 +250,8 @@ make test           # contract tests, 100k-case differential oracle, example
 make test-debug     # the same under Goose debug checks
 make sanitize SANITIZER_CC=gcc     # ASan/UBSan over the whole corpus
 make sanitize SANITIZER_CC=clang
+make fuzz           # 2 x 120 s coverage-guided campaigns + 8 negative controls
+make mutate         # 16 targeted mutants, both suites
 make bench-build    # compile both benchmark binaries, no timing
 ```
 

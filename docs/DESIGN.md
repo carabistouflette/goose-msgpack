@@ -73,6 +73,34 @@ length, a container whose last child was a container reported one level too
 shallow, and `max_depth` was off by one on exactly that shape. The regression
 is in [tests/api.goose](../tests/api.goose) as the nested-final-child case.
 
+### Frames versus structural nesting
+
+`max_depth` counts **open non-empty frames**, not containers on a path. An
+empty container is a leaf: `open` takes the `elements == 0` branch, pushes
+nothing, and closes whatever it completes. So `91 91 90` is accepted at
+`max_depth = 2` even though it nests three containers, and `91 91 91 90` is
+rejected at the same limit.
+
+The gap is exactly one, and it cannot be larger: an empty container has no
+children, so it can only ever be the *last* value on a path. Every container
+above it is non-empty and therefore holds a frame. That gives the invariant
+
+    container nesting depth <= open frames + 1 <= max_depth + 1
+
+with equality when the deepest container is empty. `depth(reader)` reports the
+frame count, so it is `0` right after such a leaf unwinds its parents; it is
+not the structural depth of the value just read.
+
+The stack is `i64[..MAX_DEPTH]` and `MAX_DEPTH` is the hard maximum for
+`max_depth`, so a push only happens while `len < max_depth <= MAX_DEPTH`. The
+stack cannot overflow, and the reader still allocates nothing. The writer
+mirrors this: `array(w, 0)` and `map(w, 0)` write a header and open no frame.
+
+This is a contract, not a tuning knob. It is pinned by
+`depth_semantics_cases` in [tests/api.goose](../tests/api.goose), including the
+`MAX_DEPTH` chain that proves the stack fits exactly and that one more frame is
+`DepthLimit` rather than an overflow.
+
 ## Token reader, not a DOM
 
 The reader returns one `Token` per wire value and never builds a tree. A

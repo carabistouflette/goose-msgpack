@@ -1,6 +1,6 @@
 # API contract
 
-Everything here is checked by [tests/api.goose](../tests/api.goose) (400
+Everything here is checked by [tests/api.goose](../tests/api.goose) (named
 assertions) and by the differential oracle in
 [tests/oracle.py](../tests/oracle.py) (102723 cases). A statement that is not
 covered by one of those two is marked **not enforced**.
@@ -59,6 +59,12 @@ On error the reader is poisoned: every later `next` returns the same error, and
 
 True when the top-level value and all its children have been read.
 
+`done` is terminal for this reader. A `next` after it returns `InvalidState`
+and poisons the reader, so a caller that wants to read a second document out of
+the same buffer must re-`init` over `input[consumed(reader)..]` rather than
+keep calling `next`. The writer may emit a sequence of values; the reader
+deliberately reads exactly one, and `finish` enforces that.
+
 ### `finish(reader) -> Error`
 
 A pure check, not a mutation. Returns:
@@ -86,8 +92,52 @@ is the primitive for a member the caller does not understand.
 | --- | --- |
 | `offset(reader)` | Byte offset of the last error, or of the last `finish` failure |
 | `consumed(reader)` | Bytes advanced so far |
-| `depth(reader)` | Open containers |
+| `depth(reader)` | Open **non-empty** frames; see [Depth accounting](#depth-accounting) |
 | `remaining(reader)` | Elements left in the innermost container, `-1` at top level |
+
+After a sticky `next` error, `depth` and `remaining` are diagnostic snapshots,
+not a resumable parse state. A rejected child may already have decremented its
+parent's remaining count. Only the sticky error and its offset are contractual;
+call `init` to reset the reader before decoding again.
+
+### Depth accounting
+
+`max_depth` bounds the number of **simultaneously open non-empty frames**, not
+the structural nesting depth of the value. The two differ by at most one, and
+the difference is deliberate:
+
+- A container with `count > 0` opens a frame. The frame holds the number of
+  elements still to read and is popped when that count reaches zero.
+- A container with `count == 0` is a **leaf**. It opens no frame, consumes no
+  depth slot, and is accepted at any depth. It also closes the frames it
+  completes, so `depth(reader)` is `0` immediately after reading an empty
+  container that was the last element of every enclosing container.
+
+Consequences, all pinned by `depth_semantics_cases` in
+[tests/api.goose](../tests/api.goose):
+
+| Shape | `max_depth` | Accepted | Open frames | Container nesting depth |
+| --- | ---: | --- | ---: | ---: |
+| `91 91 01` | 2 | yes | 2 | 2 |
+| `91 91 90` | 2 | yes | 2 | 3 |
+| `91 91 91 90` | 2 | no, `DepthLimit` at offset 2 | 2 | — |
+| `81 90 90` | 1 | yes | 1 | 2 |
+| `91` × 256 + `01` | 256 | yes | 256 | 256 |
+| `91` × 257 + `01` | 256 | no, `DepthLimit` | 256 | — |
+
+So the container nesting depth of an accepted document is at most
+`max_depth + 1`, and that bound is attained exactly when the deepest container
+is empty. A caller that needs "no more than N containers on any path" must set
+`max_depth = N - 1`.
+
+The frame stack is a fixed `i64[..MAX_DEPTH]` inside the `Reader` value, and
+`MAX_DEPTH` is also the hard maximum for `max_depth`, so a push happens only
+when `len < max_depth <= MAX_DEPTH`: the stack cannot overflow and the reader
+still allocates nothing. The writer mirrors the reader exactly — `array(w, 0)`
+and `map(w, 0)` write a header and open no frame.
+
+This is a semantic, not an optimisation. Changing it would change which
+documents are accepted, so it is documented and tested rather than tuned.
 
 ## Writer
 
@@ -141,6 +191,47 @@ A non-negative value always uses the unsigned family, so `int(5)` and
 family**, not the sign: `0x05` is `Uint`, `0xff` is `Int`. `as_i64` accepts
 both families when the value fits; `as_u64` rejects a negative.
 
+## Token accessors
+
+| Accessor | Returns | For a token that does not match |
+| --- | --- | --- |
+| `as_i64(token)` | `i64, bool` | `0, false` |
+| `as_u64(token)` | `u64, bool` | `0, false` |
+| `as_f64(token)` | `f64, bool` | `0.0, false` |
+| `as_bool(token)` | `bool, bool` | `false, false` |
+| `text(token)` | `const u8[:]` | `""` |
+| `bytes(token)` | `const u8[:]` | `""` |
+| `ext_type(token)` | `i8` | `0` |
+| `count(token)` | `i64` | `-1` |
+
+`as_i64` accepts both integer families when the value fits; `as_u64` rejects a
+negative. `as_f64` widens an `F32` and does not convert an integer. `text` is
+the payload of a `Str` and is already validated as UTF-8. `bytes` is the
+payload of a `Bin` or an `Ext`. `count` is the declared element count of an
+`Array` or the pair count of a `Map`.
+
+Two sentinels collide with real values, and the collision is documented rather
+than papered over:
+
+- `ext_type(token)` returns `0` for a token that is not an `Ext`, and `0` is
+  also a valid extension type. `ext_type(token) == 0` therefore does not
+  distinguish "an `Ext` of type 0" from "not an `Ext`".
+- `bytes(token)` returns `""` for a token that is not a `Bin` or an `Ext`, and
+  `""` is also a zero-length `Bin` or `Ext`.
+
+When the distinction matters, match on the token instead of using the
+accessor:
+
+```goose
+match token {
+    Ext e => { /* e.typ and e.v are the real values */ },
+    _ => { /* not an extension */ },
+}
+```
+
+The accessors are conveniences for a caller that already knows the token's
+family, which is the common case in a schema walk.
+
 ## Float policy
 
 IEEE-754 big-endian, `0xca` for `f32` and `0xcb` for `f64`. The writer never
@@ -192,6 +283,13 @@ with `StrLimit` after reading five bytes, not after allocating 4 GiB. The
 reader allocates nothing at all: its depth stack is a fixed `i64[..256]`
 inside the `Reader` value, so a `Reader` is 2 KiB and a container costs one
 `i64` slot, never a node.
+
+A container header is also checked for feasibility against the bytes that
+remain: an `array` declaring more elements than there are bytes left, or a
+`map` declaring more pairs than there are byte pairs left, is rejected with
+`Truncated` **at the header offset**, before the container token is returned.
+So a truncated container never yields a token whose count the caller could not
+possibly satisfy.
 
 ## Not enforced
 
