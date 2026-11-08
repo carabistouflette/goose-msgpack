@@ -29,12 +29,13 @@ check:
 	"$(GOOSE)" check tests/plan_consumer.goose
 	"$(GOOSE)" check tests/plan_model.goose
 	"$(GOOSE)" check bench/bench.goose
-	python3 -m py_compile tests/oracle.py tests/wire.py tests/triangulate.py tests/fetch-thirdparty.py scripts/sanitize.py scripts/quickstart.py bench/measure.py bench/paired.py bench/contention.py bench/fixtures.py bench/fetch.py bench/build-baseline.py
+	python3 -m py_compile tests/oracle.py tests/wire.py tests/triangulate.py tests/fetch-thirdparty.py scripts/sanitize.py scripts/quickstart.py bench/measure.py bench/paired.py bench/contention.py bench/fixtures.py bench/fetch.py bench/build-baseline.py bench/provenance.py bench/barrier.py bench/test_measure.py
 	python3 -m py_compile scripts/check-task-vendor.py tests/plan_model.py tests/plan_process.py tests/plan_process_test.py
 	python3 tests/wire.py
 	python3 tests/triangulate.py --selftest
 	python3 bench/paired.py --selftest
 	python3 bench/contention.py --selftest
+	python3 bench/test_measure.py
 	git diff --check
 
 test:
@@ -79,9 +80,10 @@ bench-build:
 	"$(GOOSE)" build bench/bench.goose --standalone --cc "$(CC)" -O2 -o .build/bench/msgpack-bench
 	"$(GOOSE)" build bench/bench-competitor.goose --standalone --cc "$(CC)" -O2 -o .build/bench/msgpack-bench-competitor
 	python3 bench/provenance.py record --binary .build/bench/msgpack-bench \
-		--cc "$(CC)" --flags=-O2 --source msgpack.goose --source bench/bench.goose
+		--cc "$(CC)" --goose "$(abspath $(GOOSE))" --flags=-O2 --source msgpack.goose --source bench/bench.goose
 	python3 bench/provenance.py record --binary .build/bench/msgpack-bench-competitor \
-		--cc "$(CC)" --flags=-O2 --source msgpack.goose --source bench/bench-competitor.goose
+		--cc "$(CC)" --goose "$(abspath $(GOOSE))" --flags=-O2 --source msgpack.goose --source bench/bench-competitor.goose
+	python3 bench/barrier.py --binary .build/bench/msgpack-bench
 
 # The MPack reference. Built twice: once as a plain -O2 compile, and once with
 # the production macros stated explicitly, so the two can be shown to be the

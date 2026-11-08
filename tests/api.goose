@@ -338,6 +338,29 @@ fn utf8_cases() {
     expect_bytes(msgpack::bytes(token), "\xed\xa0", "opaque bin payload");
 }
 
+// Enter the ASCII block, then fall through at/after byte eight on both APIs.
+fn utf8_block_fallthrough_cases() {
+    let payloads: (const u8[:])[4] = ["01234567é", "0123456789abcdefé", "01234567\xed\xa0\x80", "01234567\xc3"];
+    var writer = msgpack::Writer { .. };
+    for i in payloads.len {
+        let wanted = if i < 2 { msgpack::Error.None } else { msgpack::Error.InvalidUtf8 };
+        expect_error(msgpack::init(writer), msgpack::Error.None, "block fallthrough writer init");
+        expect_error(msgpack::str(writer, payloads[i]), wanted, "block fallthrough writer policy");
+        var wire: u8[>..] = [];
+        wire.push(0xd9);
+        wire.push(payloads[i].len as! u8);
+        wire.append(payloads[i]);
+        var reader = msgpack::Reader { .. };
+        expect_error(msgpack::init(reader, wire[..]), msgpack::Error.None, "block fallthrough reader init");
+        let token, error = msgpack::next(reader);
+        expect_error(error, wanted, "block fallthrough reader policy");
+        if i < 2 {
+            expect_bytes(msgpack::text(token), payloads[i], "block fallthrough bytes unchanged");
+            expect_error(msgpack::finish(reader), msgpack::Error.None, "block fallthrough reader finish");
+        }
+    }
+}
+
 // The strict policy, stated as regressions: overlong forms, surrogates,
 // truncated sequences and out-of-range leads are rejected; non-characters that
 // are well-formed UTF-8 are accepted, because UTF-8 validity is not a
@@ -612,6 +635,7 @@ fn main() {
     contract_cases();
     utf8_cases();
     utf8_regressions();
+    utf8_block_fallthrough_cases();
     budget_cases();
     writer_state_cases();
     writer_stream_cases();

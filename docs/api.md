@@ -1,6 +1,6 @@
 # API contract
 
-Everything here is checked by [tests/api.goose](../tests/api.goose) (400
+Everything here is checked by [tests/api.goose](../tests/api.goose) (named
 assertions) and by the differential oracle in
 [tests/oracle.py](../tests/oracle.py) (102723 cases). A statement that is not
 covered by one of those two is marked **not enforced**.
@@ -94,6 +94,11 @@ is the primitive for a member the caller does not understand.
 | `consumed(reader)` | Bytes advanced so far |
 | `depth(reader)` | Open **non-empty** frames; see [Depth accounting](#depth-accounting) |
 | `remaining(reader)` | Elements left in the innermost container, `-1` at top level |
+
+After a sticky `next` error, `depth` and `remaining` are diagnostic snapshots,
+not a resumable parse state. A rejected child may already have decremented its
+parent's remaining count. Only the sticky error and its offset are contractual;
+call `init` to reset the reader before decoding again.
 
 ### Depth accounting
 

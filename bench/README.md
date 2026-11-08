@@ -291,10 +291,19 @@ differ. The frozen tree is read, never written.
 `measure.py` writes a JSON report and a Markdown table with, per row, the
 median, p10, p90, min, max, MAD, IQR and stdev, **every raw per-sample value**,
 the peak RSS of each pass (`os.wait4`, so it is attributed to that child and not
-to a process-wide high-water mark), and a provenance block hashed **before and
-after** the run: compiler revision and binary SHA-256, library and harness
-SHA-256, competitor commit, platform, CPU count, affinity mask, compiler
-version. If any of those hashes changed during the run, the run is discarded.
+to a process-wide high-water mark), and checked binary build records **before and after** the run. The selected
+`--bench` executable and competitor must have sidecars matching their binary
+hashes and unchanged recorded sources. Compiler identity and the library/harness
+hashes come from those records, including when the selected binary uses a frozen
+library tree. The host's installed clang and current working library are not
+substitutes. Missing/stale records fail before timing; drift rejects the run.
+`bench-build` also runs the decoded-value barrier control, without timings.
+
+Historical `baseline.json` reports from the older `measure.py` mislabel the
+compiler as clang and the library as the current tree even when measuring a gcc
+frozen-tree binary. Those original bytes remain historical and unqualified;
+this fix does not repair or qualify the old measurements. `--compare` rejects
+reports lacking the new checked binary provenance.
 
 ### Budget
 

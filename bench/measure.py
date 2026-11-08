@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Run the goose-msgpack benchmark and record provenance.
 
-NOT RUN YET. The benchmark operator serialises the measurements so no other
+The benchmark operator serialises the measurements so no other
 process competes for the CPU; this script exists so a run is one command and the
 result is auditable.
 
@@ -48,7 +48,6 @@ import hashlib
 import json
 import os
 import platform
-import shutil
 import statistics
 import subprocess
 import sys
@@ -58,6 +57,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "bench"))
 sys.path.insert(0, str(ROOT / "tests"))
 import fixtures  # noqa: E402
+import provenance as build_provenance  # noqa: E402
 
 BENCH = ROOT / ".build" / "bench" / "msgpack-bench"
 COMPETITOR = ROOT / ".build" / "bench" / "msgpack-bench-competitor"
@@ -237,22 +237,37 @@ def verify(bench: Path) -> dict:
                              for name, op in sorted(expected_invalid)]}
 
 
-def provenance() -> dict:
-    goose = os.environ.get("GOOSE", "")
-    revision = (ROOT / "GOOSE_REVISION").read_text().strip()
-    version = ""
-    if goose and Path(goose).exists():
-        version = subprocess.run([goose, "--version"], capture_output=True, text=True).stdout.strip()
+def provenance(bench: Path | None = None) -> dict:
+    """Describe the selected executables, never a guessed host compiler/tree."""
+    bench = (bench or BENCH).resolve()
+    records = {}
+    for label, binary in (("goose-msgpack", bench), ("competitor", COMPETITOR)):
+        record = build_provenance.read(binary)
+        if not build_provenance.sidecar_matches(binary, record):
+            raise SystemExit(f"{binary}: missing or stale build record; rebuild it")
+        if not build_provenance.sources_unchanged(record):
+            raise SystemExit(f"{binary}: recorded source changed; rebuild it")
+        records[label] = record
+    selected = records["goose-msgpack"]
+
+    def source_hash(name):
+        matches = [entry["sha256"] for entry in selected["sources"]
+                   if Path(entry["path"]).name == name]
+        if len(matches) != 1:
+            raise SystemExit(f"{bench}: build record must identify one {name} source")
+        return matches[0]
+
     return {
-        "goose_revision": revision,
-        "goose_binary": goose,
-        "goose_version": version,
-        "goose_binary_sha256": sha256_file(Path(goose)) if goose and Path(goose).exists() else "",
-        "library_sha256": sha256_file(ROOT / "msgpack.goose"),
-        "bench_sha256": sha256_file(ROOT / "bench" / "bench.goose"),
-        "bench_binary_sha256": sha256_file(Path(os.environ["BENCH_BINARY"]))
-        if os.environ.get("BENCH_BINARY") and Path(os.environ["BENCH_BINARY"]).exists() else "",
-        "competitor_sha256": sha256_file(ROOT / "bench" / "bench-competitor.goose"),
+        "schema": 2,
+        "build_records": records,
+        "expected_goose_revision": (ROOT / "GOOSE_REVISION").read_text().strip(),
+        "goose_binary": selected.get("goose"),
+        "goose_binary_sha256": selected.get("goose_sha256"),
+        "library_sha256": source_hash("msgpack.goose"),
+        "bench_sha256": source_hash("bench.goose"),
+        "bench_binary_sha256": build_provenance.sha256_file(bench),
+        "cc": selected["compiler"]["path"],
+        "cc_version": selected["compiler"]["version"],
         "competitor_commit": "a3d08d25f0260a964f795008ac79468f728a1388",
         "competitor_version": "v0.2.1-1-ga3d08d2",
         "platform": platform.platform(),
@@ -261,9 +276,6 @@ def provenance() -> dict:
         "python": platform.python_version(),
         "cpu_count": os.cpu_count(),
         "affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else [],
-        "cc": shutil.which("clang") or "",
-        "cc_version": subprocess.run(["clang", "--version"], capture_output=True, text=True).stdout.splitlines()[0]
-        if shutil.which("clang") else "",
     }
 
 
@@ -302,7 +314,7 @@ def measure(args) -> dict:
         if not binary.exists():
             raise SystemExit(f"{binary} is missing; run `make bench-build` first")
 
-    before = provenance()
+    before = provenance(bench)
     checked = verify(bench)
     print(f"verify: {len(checked['rows'])} fixtures, {len(checked['invalid_rows'])} invalid inputs, "
           "both libraries byte-identical")
@@ -333,8 +345,8 @@ def measure(args) -> dict:
         if (index + 1) % 5 == 0:
             print(f"  {index + 1}/{args.samples} samples")
 
-    after = provenance()
-    for field in ("library_sha256", "bench_sha256", "competitor_sha256", "goose_binary_sha256"):
+    after = provenance(bench)
+    for field in ("build_records", "library_sha256", "bench_sha256", "bench_binary_sha256", "goose_binary_sha256"):
         if before[field] != after[field]:
             raise SystemExit(f"{field} changed during the run: {before[field]} -> {after[field]}")
 
@@ -436,6 +448,12 @@ def compare(paths: list[Path]) -> int:
     for report, path in ((base, paths[0]), (opt, paths[1])):
         if report["samples"] < MIN_SAMPLES:
             raise SystemExit(f"{path}: {report['samples']} samples, need at least {MIN_SAMPLES}")
+
+    for report, path in ((base, paths[0]), (opt, paths[1])):
+        before = report.get("provenance_before", {})
+        after = report.get("provenance_after", {})
+        if before.get("schema") != 2 or not before.get("build_records") or before != after:
+            raise SystemExit(f"{path}: missing or drifting binary provenance; historical reports are not qualified")
 
     base_rows = {(r["fixture"], r["operation"]): r for r in base["rows"]}
     opt_rows = {(r["fixture"], r["operation"]): r for r in opt["rows"]}
